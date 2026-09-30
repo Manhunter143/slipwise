@@ -232,7 +232,10 @@ function money(n){const v=Math.abs(n||0).toLocaleString("en-ZA",{minimumFraction
 const num=v=>{const n=parseFloat(String(v??"").replace(/\s/g,"").replace(",","."));return isFinite(n)?Math.round(n*100)/100:NaN};
 function toast(msg){const b=$("#toastbox");b.innerHTML='<div class="toast" role="status">'+esc(msg)+'</div>';clearTimeout(toast.t);toast.t=setTimeout(()=>b.innerHTML="",2600)}
 const potOf=e=>POTS[e.pot]?e.pot:"groceries";
-const inRange=(from,to)=>S.expenses.filter(e=>{const d=parse(e.date);return d&&d>=from&&(!to||d<to)});
+// Which budget month a slip counts in: the day it was captured, not the date printed on the slip
+const dayOf=ms=>{const d=new Date(ms);return new Date(d.getFullYear(),d.getMonth(),d.getDate())};
+const countDate=e=>parse(e.addedOn)||(e.createdAt?dayOf(e.createdAt):null)||parse(e.date);
+const inRange=(from,to)=>S.expenses.filter(e=>{const d=countDate(e);return d&&d>=from&&(!to||d<to)});
 const inPeriod=p=>inRange(p.start,p.next);
 const sum=a=>Math.round(a.reduce((t,e)=>t+(+e.amount||0),0)*100)/100;
 const potSum=(list,pot)=>sum(list.filter(e=>potOf(e)===pot));
@@ -402,7 +405,7 @@ const itemRow=e=>`<button class="item" data-edit="${esc(e.id)}"><span class="m">
 /* ---------- sheets ---------- */
 function periodKeys(){
   const set=new Set([period(today()).key]);
-  S.expenses.forEach(e=>{const d=parse(e.date);if(d)set.add(period(d).key)});
+  S.expenses.forEach(e=>{const d=countDate(e);if(d)set.add(period(d).key)});
   return [...set].sort().reverse();
 }
 function sheetView(){
@@ -446,7 +449,7 @@ function yearRows(y){
 }
 function yearOptions(){
   const set=new Set([today().getFullYear()]);
-  S.expenses.forEach(e=>{const d=parse(e.date);if(d)set.add(period(d).start.getFullYear())});
+  S.expenses.forEach(e=>{const d=countDate(e);if(d)set.add(period(d).start.getFullYear())});
   return [...set].sort().reverse();
 }
 function yearView(){
@@ -469,7 +472,7 @@ function yearView(){
 function paceChart(p,list,lim,until){
   const W=320,H=150,L=44,R=10,T=12,B=22,iw=W-L-R,ih=H-T-B;
   const byDay=new Array(p.days).fill(0);
-  list.forEach(e=>{const i=dayDiff(p.start,parse(e.date));if(i>=0&&i<p.days)byDay[i]+=+e.amount||0});
+  list.forEach(e=>{const i=dayDiff(p.start,countDate(e));if(i>=0&&i<p.days)byDay[i]+=+e.amount||0});
   const lastI=Math.min(p.days-1,dayDiff(p.start,until));
   let c=0;const cum=byDay.map(v=>c+=v);
   const top=Math.max(lim,cum[lastI]||0,1)*1.08;
@@ -582,7 +585,7 @@ async function openEditor(exp,file){
     <div class="field"><label for="ed-amount">Total paid</label><input id="ed-amount" class="amtin" inputmode="decimal" value="${d.amount!==""?esc((+d.amount).toFixed(2).replace(".",",")):""}" placeholder="0,00"></div>
     <div class="field"><label for="ed-merchant">Shop or payment</label><input id="ed-merchant" value="${esc(d.merchant)}" placeholder="e.g. Checkers"></div>
     <div class="field"><label for="ed-date">Date</label><input id="ed-date" type="date" value="${esc(d.date)}">
-      <div id="ed-date-warn" class="banner warn" hidden><span id="ed-date-msg"></span> <button class="btn small" id="ed-today" style="margin-top:8px">Use today's date</button></div></div>
+      <div id="ed-date-note" class="hint" hidden></div></div>
     <div id="ed-items">${itemsHtml(d.items)}</div>
     <div class="actions">
       <button class="btn" id="ed-cancel">Cancel</button>
@@ -597,18 +600,17 @@ async function openEditor(exp,file){
   };
   document.querySelectorAll("[data-pot]").forEach(b=>b.addEventListener("click",()=>setPot(b.dataset.pot,true)));
   setPot(pot,false);
-  // Warn when the date puts the slip in a different budget month than the current one
+  // The slip keeps its own date, but counts in the budget month it was captured in
+  const addedOn=exp?(exp.addedOn||ymd(countDate(exp))):ymd(today());
+  const countsIn=period(parse(addedOn));
   const checkDate=()=>{
-    const dt=parse($("#ed-date").value),cur=period(today()),w=$("#ed-date-warn");
-    if(!dt){w.hidden=true;return}
-    const p=period(dt);
-    if(p.key===cur.key){w.hidden=true;return}
-    $("#ed-date-msg").textContent=`This date falls in the ${fmtD(p.start)} – ${fmtDY(p.end)} budget month, so it won't count in this month (${fmtD(cur.start)} – ${fmtD(cur.end)}).`;
-    w.hidden=false;
+    const dt=parse($("#ed-date").value),n=$("#ed-date-note");
+    if(!dt||period(dt).key===countsIn.key){n.hidden=true;return}
+    n.textContent=`Counts in the ${fmtD(countsIn.start)} – ${fmtD(countsIn.end)} month, when it was captured. The slip date stays as it is.`;
+    n.hidden=false;
   };
   $("#ed-date").addEventListener("change",checkDate);
   $("#ed-date").addEventListener("input",checkDate);
-  $("#ed-today").addEventListener("click",()=>{$("#ed-date").value=ymd(today());checkDate()});
   checkDate();
   window.__slipCheckDate=checkDate;
   let items=d.items||[],photo=null,thumbUrl=null;
@@ -626,13 +628,12 @@ async function openEditor(exp,file){
     if(!(amount>0)){toast("Enter the total paid");$("#ed-amount").focus();return}
     if(!parse(date)){toast("Pick a date");return}
     if(file&&!photo){toast("Still preparing the photo…");return}
-    const row={id:exp?exp.id:newId(),pot,merchant:$("#ed-merchant").value.trim().slice(0,80),amount,date,items:items.slice(0,40),createdAt:exp?.createdAt||Date.now(),hasPhoto:!!(exp&&exp.hasPhoto)};
+    const row={id:exp?exp.id:newId(),pot,merchant:$("#ed-merchant").value.trim().slice(0,80),amount,date,addedOn,items:items.slice(0,40),createdAt:exp?.createdAt||Date.now(),hasPhoto:!!(exp&&exp.hasPhoto)};
     const btn=$("#ed-save");btn.disabled=true;
     try{
       await putExpense(row,photo);close();
-      const sp=period(parse(date)),inThis=sp.key===period(today()).key;
       const what=pot==="extras"?"added to month-end":"off "+POTS[pot].name;
-      toast(inThis?(!isNew?"Slip updated":money(amount)+" "+what):`Saved in the ${fmtD(sp.start)} – ${fmtD(sp.end)} month. See Sheets to find it.`);
+      toast(!isNew?"Slip updated":money(amount)+" "+what);
     }catch(e){btn.disabled=false;toast(e&&e.name==="QuotaExceededError"?"Phone storage is full. Free up space, then try again.":"Couldn't save. Try again.")}
   });
   if(exp&&exp.hasPhoto){const b=await dbGet("photos",exp.id).catch(()=>null);if(b&&$("#ed-photo"))showPhoto(b)}
