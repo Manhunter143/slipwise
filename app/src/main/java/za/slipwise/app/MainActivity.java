@@ -173,6 +173,56 @@ public class MainActivity extends Activity {
         public void saveFile(final String name, final String b64, final String mime) {
             runOnUiThread(() -> requestSave(name, b64, mime));
         }
+
+        /**
+         * Saves one photo quietly into Pictures/Slipwise/&lt;folder&gt; and reports success,
+         * so the page can save many photos in a row and show one message at the end.
+         */
+        @JavascriptInterface
+        public boolean savePhoto(String name, String b64, String folder) {
+            return writePhotoQuietly(name, b64, folder);
+        }
+    }
+
+    private boolean writePhotoQuietly(String name, String b64, String folder) {
+        String sub = folder == null ? "" : folder.replaceAll("[^A-Za-z0-9 _-]", "").trim();
+        String safeName = name.replaceAll("[\\\\/:*?\"<>|]", "-");
+        try {
+            byte[] bytes = Base64.decode(b64, Base64.DEFAULT);
+            if (Build.VERSION.SDK_INT >= 29) {
+                ContentValues cv = new ContentValues();
+                cv.put(MediaStore.MediaColumns.DISPLAY_NAME, safeName);
+                cv.put(MediaStore.MediaColumns.MIME_TYPE, "image/jpeg");
+                cv.put(MediaStore.MediaColumns.RELATIVE_PATH,
+                        Environment.DIRECTORY_PICTURES + "/Slipwise" + (sub.isEmpty() ? "" : "/" + sub));
+                Uri uri = getContentResolver().insert(
+                        MediaStore.Images.Media.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY), cv);
+                if (uri == null) return false;
+                try (OutputStream os = getContentResolver().openOutputStream(uri)) {
+                    if (os == null) return false;
+                    os.write(bytes);
+                }
+                return true;
+            } else {
+                if (checkSelfPermission(Manifest.permission.WRITE_EXTERNAL_STORAGE) != PackageManager.PERMISSION_GRANTED) {
+                    runOnUiThread(() -> requestPermissions(
+                            new String[]{Manifest.permission.WRITE_EXTERNAL_STORAGE}, REQ_STORAGE));
+                    return false;
+                }
+                File dir = new File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES),
+                        "Slipwise" + (sub.isEmpty() ? "" : "/" + sub));
+                //noinspection ResultOfMethodCallIgnored
+                dir.mkdirs();
+                File f = new File(dir, safeName);
+                try (FileOutputStream fo = new FileOutputStream(f)) {
+                    fo.write(bytes);
+                }
+                MediaScannerConnection.scanFile(this, new String[]{f.getAbsolutePath()}, null, null);
+                return true;
+            }
+        } catch (Exception e) {
+            return false;
+        }
     }
 
     private void requestSave(String name, String b64, String mime) {

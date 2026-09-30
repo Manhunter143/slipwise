@@ -448,7 +448,8 @@ function monthView(){
     <div class="potsum"><div class="row" style="font-size:14px"><strong>Everything this month</strong><span><strong>${money(gs+bs+xs)}</strong></span></div></div>
   </div>
   <div class="card"><h2>Groceries through the month</h2>${paceChart(p,list.filter(e=>potOf(e)==="groceries"),gl,isCurrent?t:p.end)}<div class="legend"><span>Spent so far</span><span class="p">Even pace to limit</span></div></div>
-  <div class="top"><h2>All slips</h2><button class="btn small" id="export" ${list.length?"":"disabled"}>Download sheet (CSV)</button></div>`;
+  <div class="top"><h2>All slips</h2><button class="btn small" id="export" ${list.length?"":"disabled"}>Download sheet (CSV)</button></div>
+  ${(()=>{const n=list.filter(e=>e.hasPhoto).length;return n?`<button class="btn" id="photos-month">Save all ${n} photo${n===1?"":"s"} to phone</button><p class="hint" style="margin-top:-8px">Goes to Pictures › Slipwise › ${monthName(p)}, named by date, shop and amount.</p>`:""})()}`;
   if(list.length) h+=`<div class="tablewrap"><table><thead><tr><th>Date</th><th>Shop</th><th>Pot</th><th class="n">Amount</th></tr></thead><tbody>${list.map(e=>`<tr data-edit="${esc(e.id)}"><td>${fmtD(parse(e.date))}</td><td>${esc(e.merchant||"")}</td><td><span class="potname"><span class="dot ${potOf(e)}"></span>${POTS[potOf(e)].short}</span></td><td class="n">${money(e.amount)}</td></tr>`).join("")}</tbody></table></div>`;
   else h+='<div class="empty"><strong>Nothing here yet</strong>Slips you add show up in this sheet under the month you chose for them.</div>';
   return h;
@@ -478,7 +479,8 @@ function yearView(){
   <div class="tablewrap"><table><thead><tr><th>Month</th><th class="n">Groceries</th><th class="n">Baby</th><th class="n">Month-end</th></tr></thead><tbody>
     ${rows.map(r=>`<tr class="${r.p.key===cur?"cur":""}"><td>${r.name.slice(0,3)}</td><td class="n ${gl&&r.g>gl?"over":""}">${r.g?money(r.g):"—"}</td><td class="n ${!fundMode()&&bl&&r.b>bl?"over":""}">${r.b?money(r.b):"—"}</td><td class="n">${r.x?money(r.x):"—"}</td></tr>`).join("")}
   </tbody><tfoot><tr><td>Total</td><td class="n">${money(tot.g)}</td><td class="n">${money(tot.b)}</td><td class="n">${money(tot.x)}</td></tr></tfoot></table></div>
-  <button class="btn" id="export-year">Download ${S.sheetYear} sheet (CSV)</button>`;
+  <button class="btn" id="export-year">Download ${S.sheetYear} sheet (CSV)</button>
+  ${(()=>{const n=S.expenses.filter(e=>e.hasPhoto&&monthOf(e).startsWith(S.sheetYear+"-")).length;return n?`<button class="btn" id="photos-year">Save all ${n} photos from ${S.sheetYear} to phone</button><p class="hint" style="margin-top:-8px">One folder per month in Pictures › Slipwise.</p>`:""})()}`;
 }
 function paceChart(p,list,lim,until){
   const W=320,H=150,L=44,R=10,T=12,B=22,iw=W-L-R,ih=H-T-B;
@@ -571,6 +573,8 @@ function bindView(){
   on("sheet-year","change",e=>{S.sheetYear=+e.target.value;render()});
   on("export","click",exportMonthCsv);
   on("export-year","click",exportYearCsv);
+  on("photos-month","click",e=>savePhotos(inPeriod(periodOfKey(S.sheetKey)),e.currentTarget));
+  on("photos-year","click",e=>savePhotos(S.expenses.filter(x=>monthOf(x).startsWith(S.sheetYear+"-")),e.currentTarget));
   on("bk-save","click",backup);
   on("bk-restore","click",()=>$("#restore-file").click());
   document.querySelectorAll("[data-filter]").forEach(b=>b.addEventListener("click",()=>{S.filter=b.dataset.filter;render()}));
@@ -703,6 +707,29 @@ async function exportYearCsv(){
   yr.forEach(r=>{g+=r.g;b+=r.b;x+=r.x;rows.push([r.name,r.g.toFixed(2),r.b.toFixed(2),r.x.toFixed(2),(r.g+r.b+r.x).toFixed(2)])});
   rows.push(["Total",g.toFixed(2),b.toFixed(2),x.toFixed(2),(g+b+x).toFixed(2)]);
   if(!await saveFile(`slipwise-${y}.csv`,csvBlob(rows)))toast("Year sheet saved to Downloads");
+}
+// Save every photo in the list to the phone's Pictures/Slipwise/<Month Year> folder in one go
+async function savePhotos(list,btn){
+  const todo=list.filter(e=>e.hasPhoto).sort((a,b)=>monthOf(a).localeCompare(monthOf(b))||a.date.localeCompare(b.date));
+  if(!todo.length){toast("No photos in this period");return}
+  const label=btn.textContent;btn.disabled=true;
+  const clean=t=>String(t||"").replace(/[^\w .&'-]+/g," ").replace(/\s+/g," ").trim().slice(0,40);
+  const used=new Set();let ok=0;const folders=new Set();
+  try{
+    for(let i=0;i<todo.length;i++){
+      const e=todo[i];btn.textContent=`Saving ${i+1} of ${todo.length}…`;
+      const blob=await dbGet("photos",e.id);if(!blob)continue;
+      const folder=monthName(periodOfKey(monthOf(e)));folders.add(folder);
+      let name=`${e.date} ${clean(e.merchant)||"Slip"} R${(+e.amount).toFixed(2)} ${POTS[potOf(e)].short}`;
+      let n=name,k=2;while(used.has(folder+"/"+n)){n=name+" ("+(k++)+")"}used.add(folder+"/"+n);
+      if(window.AndroidBridge&&window.AndroidBridge.savePhoto){
+        if(window.AndroidBridge.savePhoto(n+".jpg",await blobToB64(blob),folder))ok++;
+      }else{await saveFile(n+".jpg",blob);ok++;await new Promise(r=>setTimeout(r,350))}
+    }
+    const where=window.AndroidBridge?(folders.size===1?`Pictures › Slipwise › ${[...folders][0]}`:"Pictures › Slipwise"):"Downloads";
+    toast(ok===todo.length?`Saved ${ok} photo${ok===1?"":"s"} to ${where}`:ok?`Saved ${ok} of ${todo.length} photos to ${where}`:"Couldn't save the photos. Allow storage access and try again.");
+  }catch(err){toast("Saving stopped part-way. Try again.")}
+  finally{btn.disabled=false;btn.textContent=label}
 }
 async function backup(){
   const btn=$("#bk-save");btn.disabled=true;btn.textContent="Packing…";
