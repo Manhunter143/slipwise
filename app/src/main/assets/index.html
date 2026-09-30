@@ -152,6 +152,9 @@ input.amtin{font-family:var(--f-mono);font-size:20px;font-weight:600}
 .sheet .grab{width:40px;height:4px;border-radius:2px;background:var(--line);align-self:center}
 .status{display:flex;gap:10px;align-items:center;font-size:14px;padding:10px 12px;border-radius:8px;background:var(--bg)}
 .status.err{color:var(--bad)}
+.status.warn{color:var(--warn);background:var(--bg);border:1px solid var(--warn)}
+.status details{margin-top:8px;color:var(--ink)}
+input.amtin.check{border-color:var(--warn);box-shadow:inset 0 0 0 2px var(--warn)}
 .spin{width:16px;height:16px;border-radius:50%;border:2px solid var(--line);border-top-color:var(--accent);animation:sp .8s linear infinite;flex:none}
 @keyframes sp{to{transform:rotate(360deg)}}
 @media (prefers-reduced-motion:reduce){.spin{animation-duration:3s}}
@@ -205,8 +208,8 @@ const POTS={
 };
 const POT_IDS=["groceries","baby","extras"];
 const MONTHS=["January","February","March","April","May","June","July","August","September","October","November","December"];
-const MODELS={"claude-haiku-4-5-20251001":"Claude Haiku 4.5 (cheapest, about R0.07 a slip)","claude-sonnet-5-5":"Claude Sonnet 5.5 (most accurate, about R0.15 a slip)"};
-const DEFAULTS={groceriesLimit:0,babyLimit:0,babyMode:"monthly",babyFundStart:"",currency:"R",apiKey:"",model:"claude-haiku-4-5-20251001"};
+const MODELS={"claude-sonnet-5-5":"Claude Sonnet 5.5 (recommended, most accurate, about R0.15–0.25 a slip)","claude-haiku-4-5-20251001":"Claude Haiku 4.5 (cheaper, less accurate, about R0.07 a slip)"};
+const DEFAULTS={groceriesLimit:0,babyLimit:0,babyMode:"monthly",babyFundStart:"",currency:"R",apiKey:"",model:"claude-sonnet-5-5",readerV2:true};
 const S={settings:Object.assign({},DEFAULTS),expenses:[],tab:"home",homeKey:null,filter:"all",sheetView:"month",sheetKey:null,sheetYear:null,ready:false,storageNote:""};
 
 /* ---------- helpers ---------- */
@@ -282,6 +285,7 @@ function migrateSettings(s){
   const out=Object.assign({},DEFAULTS,s);
   if(!out.groceriesLimit&&s&&s.limit) out.groceriesLimit=s.limit; // older versions had one limit
   delete out.limit;delete out.setupSkipped;delete out.resetDay;
+  if(s&&!s.readerV2){out.model="claude-sonnet-5-5";out.readerV2=true} // move everyone to the more accurate reader once
   return out;
 }
 async function putSettings(data){S.settings=Object.assign({},S.settings,data);await dbPut("kv",S.settings,"settings");render()}
@@ -300,7 +304,7 @@ async function prepPhoto(file){
   let bmp;
   try{bmp=await createImageBitmap(file,{imageOrientation:"from-image"})}
   catch(e){bmp=await new Promise((res,rej)=>{const i=new Image();i.onload=()=>res(i);i.onerror=rej;i.src=URL.createObjectURL(file)})}
-  const w=bmp.width,h=bmp.height,k=Math.min(1,1568/Math.max(w,h));
+  const w=bmp.width,h=bmp.height,k=Math.min(1,2200/Math.max(w,h));
   const c=document.createElement("canvas");c.width=Math.round(w*k);c.height=Math.round(h*k);
   c.getContext("2d").drawImage(bmp,0,0,c.width,c.height);
   return await new Promise(res=>c.toBlob(res,"image/jpeg",0.85));
@@ -658,28 +662,66 @@ function itemsHtml(items){
   if(!items||!items.length)return "";
   return `<details><summary>${items.length} line item${items.length===1?"":"s"} read from the slip</summary><ul>${items.map(i=>`<li><span>${esc(i.name)}</span><span>${money(+i.amount||0)}</span></li>`).join("")}</ul></details>`;
 }
+// Long till slips are sent as overlapping pieces so the small print stays sharp
+async function slipImages(blob){
+  const bmp=await createImageBitmap(blob);
+  const w=bmp.width,h=bmp.height,out=[];
+  const draw=(sx,sy,sw,sh)=>{const k=Math.min(1,1568/Math.max(sw,sh));const c=document.createElement("canvas");c.width=Math.round(sw*k);c.height=Math.round(sh*k);
+    c.getContext("2d").drawImage(bmp,sx,sy,sw,sh,0,0,c.width,c.height);return new Promise(r=>c.toBlob(r,"image/jpeg",0.9))};
+  if(h<=w*1.6){out.push(await draw(0,0,w,h));return out}
+  const n=Math.min(4,Math.ceil(h/(w*1.3))),tileH=Math.min(h,Math.round(h/n*1.18)),step=n>1?(h-tileH)/(n-1):0;
+  for(let i=0;i<n;i++)out.push(await draw(0,Math.round(i*step),w,tileH));
+  return out;
+}
 async function readSlip(photo,setItems,suggestPot){
   const st=$("#ed-status");
   const ctl={aborted:false,abort(){this.aborted=true}};readCtl=ctl;
-  const prompt=`This photo shows a till slip / receipt or proof of payment (most likely South African, amounts in Rand). Today is ${ymd(today())}.
-Extract the purchase. Reply with only a JSON object in this shape:
-{"merchant": "store or payee name", "date": "YYYY-MM-DD or null", "total": 123.45, "pot": "groceries | baby | extras", "items": [{"name": "item", "amount": 12.99}]}
-Rules: "total" is the final amount actually paid (the TOTAL / AMOUNT DUE line, including VAT, after discounts and savings; ignore change, cash tendered and VAT breakdown lines). Use a number with a dot for decimals. List up to 30 items.
-"pot": "baby" if the slip is mainly baby things (nappies, formula, baby food, wipes, baby clothes, baby shops like Baby City); "groceries" if it is mainly food and household groceries from a supermarket; otherwise "extras".
-If the year is missing, pick the most recent date that is not after today. If the image is not a receipt, reply {"error": "not a receipt"}.`;
   try{
-    const b64=await blobToB64(photo);
-    const text=await askClaude([{type:"image",source:{type:"base64",media_type:"image/jpeg",data:b64}},{type:"text",text:prompt}],1500);
+    const parts=await slipImages(photo);
+    const intro=parts.length>1?`The photos are ONE receipt shown in ${parts.length} overlapping parts, top to bottom. Lines near the joins appear twice: count them once.`:"The photo shows one receipt.";
+    const prompt=`${intro} It is a till slip / receipt or proof of payment, most likely South African, amounts in Rand. Today is ${ymd(today())}.
+Getting the TOTAL exactly right matters more than anything else.
+Step 1: find the totals area and copy its lines exactly as printed into "totals_lines" (e.g. SUBTOTAL, SAVINGS / DISCOUNT / SMART SHOPPER / XTRA SAVINGS, TOTAL, BALANCE DUE, AMOUNT DUE, CARD / SPEEDPOINT / CREDIT CARD, CASH, CHANGE, CASHBACK, VAT lines).
+Step 2: "total" = the final amount the customer paid for the goods: the TOTAL / BALANCE DUE / AMOUNT DUE after savings and discounts, including VAT. Not the subtotal before discounts, not the VAT amount, not cash tendered, not change, and exclude any cashback.
+Step 3: "paid" = the payment amount printed on the slip (card amount, or cash tendered minus change). Use null if not shown.
+Step 4: check your digits. If any digit of the total is blurred, cut off, folded or ambiguous (e.g. 1/7, 3/8, 5/6, 0/8), or the totals area is not visible, set "confidence" to "low" and say why in "doubt". Use "high" only when the total is clearly legible.
+Reply with only this JSON:
+{"merchant": "store or payee", "date": "YYYY-MM-DD or null", "totals_lines": ["TOTAL 116.47"], "total": 116.47, "paid": 116.47, "confidence": "high | medium | low", "doubt": "", "pot": "groceries | baby | extras", "items": [{"name": "item", "amount": 12.99}]}
+Numbers use a dot for decimals. List up to 30 items (final price per line).
+"pot": "baby" if mainly baby things (nappies, formula, baby food, wipes, baby clothes, baby shops like Baby City); "groceries" if mainly food and household groceries from a supermarket; otherwise "extras".
+If the year is missing, pick the most recent date that is not after today. If this is not a receipt, reply {"error": "not a receipt"}.`;
+    const content=[];
+    for(const b of parts)content.push({type:"image",source:{type:"base64",media_type:"image/jpeg",data:await blobToB64(b)}});
+    content.push({type:"text",text:prompt});
+    const text=await askClaude(content,2500);
     if(ctl.aborted||!document.getElementById("ed-status"))return;
     const r=extractJSON(text);
     if(!r||r.error||!(num(r.total)>0))throw {code:"notslip"};
-    const amt=$("#ed-amount");if(!amt.value)amt.value=num(r.total).toFixed(2).replace(".",",");
+    const total=num(r.total),paid=num(r.paid);
+    const it=Array.isArray(r.items)?r.items.filter(i=>i&&i.name).map(i=>({name:String(i.name).slice(0,60),amount:num(i.amount)||0})).slice(0,30):[];
+    const itemsSum=Math.round(it.reduce((t,i)=>t+i.amount,0)*100)/100;
+    // Cross-checks: anything doubtful is flagged for the person to confirm against the photo
+    const doubts=[];
+    if(String(r.confidence||"").toLowerCase()!=="high")doubts.push(r.doubt?String(r.doubt).slice(0,140):"parts of the slip were hard to read");
+    if(paid>0&&Math.abs(paid-total)>0.01)doubts.push(`the payment line shows ${money(paid)}, not ${money(total)}`);
+    const amt=$("#ed-amount");
+    if(!amt.value)amt.value=total.toFixed(2).replace(".",",");
     if(r.merchant&&!$("#ed-merchant").value)$("#ed-merchant").value=String(r.merchant).slice(0,80);
     const d=parse(r.date);if(d&&d<=today()&&dayDiff(d,today())<400)$("#ed-date").value=ymd(d);
     if(typeof r.pot==="string")suggestPot(r.pot.trim().toLowerCase());
-    const it=Array.isArray(r.items)?r.items.filter(i=>i&&i.name).map(i=>({name:String(i.name).slice(0,60),amount:num(i.amount)||0})).slice(0,30):[];
     setItems(it);$("#ed-items").innerHTML=itemsHtml(it);
-    st.className="status";st.textContent="Read by Claude. Check the total and the pot, then save.";
+    const lines=Array.isArray(r.totals_lines)?r.totals_lines.map(String).slice(0,8):[];
+    const linesHtml=lines.length?`<details${doubts.length?" open":""}><summary>Totals printed on the slip</summary><ul>${lines.map(l=>`<li><span class="mono">${esc(l)}</span></li>`).join("")}</ul></details>`:"";
+    if(doubts.length){
+      amt.classList.add("check");
+      st.className="status warn";
+      st.innerHTML=`<div><strong>Check the total against the photo.</strong> ${esc((t=>t.charAt(0).toUpperCase()+t.slice(1))(doubts.join("; ")))}. Tap the photo to zoom in.${linesHtml}</div>`;
+      amt.addEventListener("input",()=>amt.classList.remove("check"),{once:true});
+    }else{
+      const checks=[paid>0?"matches the payment line":"",it.length&&Math.abs(itemsSum-total)<=0.02?"matches the items":""].filter(Boolean);
+      st.className="status";
+      st.innerHTML=`<div>Read by Claude: total <strong>${money(total)}</strong>${checks.length?" ("+checks.join(", ")+")":""}. Check the pot and month, then save.${linesHtml}</div>`;
+    }
   }catch(e){
     if(ctl.aborted||!document.getElementById("ed-status"))return;
     st.className="status err";st.textContent=API_ERR[e.code]||("Couldn't read the slip: "+(e.message||"unknown error")+". Enter the total by hand.");
