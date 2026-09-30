@@ -48,6 +48,10 @@ p{margin:0}
 .dot{display:inline-block;width:9px;height:9px;border-radius:50%;flex:none}
 .dot.groceries{background:var(--pot-g)} .dot.baby{background:var(--pot-b)} .dot.extras{background:var(--pot-x)}
 .potname{display:flex;align-items:center;gap:7px}
+.monthnav{display:flex;align-items:center;gap:4px}
+.monthnav .label{min-width:9.5em;text-align:center;font-size:12px;color:var(--ink)}
+.navbtn{appearance:none;border:1px solid var(--line);background:var(--paper);color:var(--ink);width:36px;height:36px;border-radius:50%;font:600 20px/1 var(--f-body);cursor:pointer;display:flex;align-items:center;justify-content:center;padding:0 0 2px}
+.navbtn:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 
 /* Groceries slip */
 .slip{position:relative;background:var(--paper);padding:20px 18px 26px;border-radius:6px 6px 0 0;display:flex;flex-direction:column;gap:12px;margin-bottom:8px}
@@ -202,8 +206,8 @@ const POTS={
 const POT_IDS=["groceries","baby","extras"];
 const MONTHS=["January","February","March","April","May","June","July","August","September","October","November","December"];
 const MODELS={"claude-haiku-4-5-20251001":"Claude Haiku 4.5 (cheapest, about R0.07 a slip)","claude-sonnet-5-5":"Claude Sonnet 5.5 (most accurate, about R0.15 a slip)"};
-const DEFAULTS={groceriesLimit:0,babyLimit:0,babyMode:"monthly",babyFundStart:"",resetDay:1,currency:"R",apiKey:"",model:"claude-haiku-4-5-20251001"};
-const S={settings:Object.assign({},DEFAULTS),expenses:[],tab:"home",filter:"all",sheetView:"month",sheetKey:null,sheetYear:null,ready:false,storageNote:""};
+const DEFAULTS={groceriesLimit:0,babyLimit:0,babyMode:"monthly",babyFundStart:"",currency:"R",apiKey:"",model:"claude-haiku-4-5-20251001"};
+const S={settings:Object.assign({},DEFAULTS),expenses:[],tab:"home",homeKey:null,filter:"all",sheetView:"month",sheetKey:null,sheetYear:null,ready:false,storageNote:""};
 
 /* ---------- helpers ---------- */
 const $=s=>document.querySelector(s);
@@ -214,34 +218,33 @@ const parse=s=>{const m=/^(\d{4})-(\d{2})-(\d{2})$/.exec(s||"");return m?new Dat
 const dim=(y,m)=>new Date(y,m+1,0).getDate();
 const today=()=>{const d=new Date();return new Date(d.getFullYear(),d.getMonth(),d.getDate())};
 const dayDiff=(a,b)=>Math.round((b-a)/864e5);
-function periodStart(date,rd){
-  const y=date.getFullYear(),m=date.getMonth(),day=Math.min(rd,dim(y,m));
-  if(date.getDate()>=day) return new Date(y,m,day);
-  const p=new Date(y,m-1,1);return new Date(p.getFullYear(),p.getMonth(),Math.min(rd,dim(p.getFullYear(),p.getMonth())));
-}
-function nextStart(start,rd){const n=new Date(start.getFullYear(),start.getMonth()+1,1);return new Date(n.getFullYear(),n.getMonth(),Math.min(rd,dim(n.getFullYear(),n.getMonth())))}
+/* Budget months are plain calendar months ("2026-09"). Each slip carries the month you picked for it. */
+const ym=d=>d.getFullYear()+"-"+pad(d.getMonth()+1);
 function period(date){
-  const rd=S.settings.resetDay||1,start=periodStart(date,rd),next=nextStart(start,rd);
-  return {start,next,end:new Date(next.getFullYear(),next.getMonth(),next.getDate()-1),key:ymd(start),days:dayDiff(start,next)};
+  const start=new Date(date.getFullYear(),date.getMonth(),1),next=new Date(date.getFullYear(),date.getMonth()+1,1);
+  return {start,next,end:new Date(next.getFullYear(),next.getMonth(),0),key:ym(start),days:dim(start.getFullYear(),start.getMonth())};
 }
-// The budget month that starts in calendar month m of year y
-const periodForMonth=(y,m)=>period(new Date(y,m,Math.min(S.settings.resetDay||1,dim(y,m))));
+const periodOfKey=k=>{const m=/^(\d{4})-(\d{2})/.exec(k||"");return period(m?new Date(+m[1],+m[2]-1,1):today())};
+const periodForMonth=(y,m)=>period(new Date(y,m,1));
+const monthName=p=>MONTHS[p.start.getMonth()]+" "+p.start.getFullYear();
+const shiftKey=(k,n)=>{const p=periodOfKey(k);return ym(new Date(p.start.getFullYear(),p.start.getMonth()+n,1))};
 const fmtD=d=>d.toLocaleDateString("en-ZA",{day:"numeric",month:"short"});
 const fmtDY=d=>d.toLocaleDateString("en-ZA",{day:"numeric",month:"short",year:"numeric"});
 function money(n){const v=Math.abs(n||0).toLocaleString("en-ZA",{minimumFractionDigits:2,maximumFractionDigits:2});return (n<0?"−":"")+(S.settings.currency||"R")+" "+v}
 const num=v=>{const n=parseFloat(String(v??"").replace(/\s/g,"").replace(",","."));return isFinite(n)?Math.round(n*100)/100:NaN};
 function toast(msg){const b=$("#toastbox");b.innerHTML='<div class="toast" role="status">'+esc(msg)+'</div>';clearTimeout(toast.t);toast.t=setTimeout(()=>b.innerHTML="",2600)}
 const potOf=e=>POTS[e.pot]?e.pot:"groceries";
-// Which budget month a slip counts in: the day it was captured, not the date printed on the slip
+// Which month a slip counts in: the month picked on the slip (older slips: the month they were captured)
 const dayOf=ms=>{const d=new Date(ms);return new Date(d.getFullYear(),d.getMonth(),d.getDate())};
-const countDate=e=>parse(e.addedOn)||(e.createdAt?dayOf(e.createdAt):null)||parse(e.date);
-const inRange=(from,to)=>S.expenses.filter(e=>{const d=countDate(e);return d&&d>=from&&(!to||d<to)});
-const inPeriod=p=>inRange(p.start,p.next);
+const countDate=e=>parse(e.addedOn)||(e.createdAt?dayOf(e.createdAt):null)||parse(e.date)||today();
+const monthOf=e=>/^\d{4}-\d{2}$/.test(e.month||"")?e.month:ym(countDate(e));
+const inPeriod=p=>S.expenses.filter(e=>monthOf(e)===p.key);
 const sum=a=>Math.round(a.reduce((t,e)=>t+(+e.amount||0),0)*100)/100;
 const potSum=(list,pot)=>sum(list.filter(e=>potOf(e)===pot));
 const newId=()=>"s"+Date.now().toString(36)+Math.random().toString(36).slice(2,8);
 const fundMode=()=>S.settings.babyMode==="fund";
-function babyFundSpent(){const from=parse(S.settings.babyFundStart)||new Date(2000,0,1);return potSum(inRange(from,null),"baby")}
+const fundStartKey=()=>(S.settings.babyFundStart||"2000-01").slice(0,7);
+function babyFundSpent(){const from=fundStartKey();return potSum(S.expenses.filter(e=>monthOf(e)>=from),"baby")}
 // Returns true when the Android app saved it (it shows its own "Saved" message)
 async function saveFile(name,blob){
   if(window.AndroidBridge){window.AndroidBridge.saveFile(name,await blobToB64(blob),blob.type||"application/octet-stream");return true}
@@ -278,7 +281,7 @@ const dbDel=(store,key)=>tx(store,"readwrite",s=>s.delete(key));
 function migrateSettings(s){
   const out=Object.assign({},DEFAULTS,s);
   if(!out.groceriesLimit&&s&&s.limit) out.groceriesLimit=s.limit; // older versions had one limit
-  delete out.limit;delete out.setupSkipped;
+  delete out.limit;delete out.setupSkipped;delete out.resetDay;
   return out;
 }
 async function putSettings(data){S.settings=Object.assign({},S.settings,data);await dbPut("kv",S.settings,"settings");render()}
@@ -341,35 +344,44 @@ function render(){
   $("#app").innerHTML=S.tab==="home"?homeView():S.tab==="sheet"?sheetView():settingsView();
   bindView();
 }
-const dayOpts=sel=>{let o="";for(let i=1;i<=31;i++)o+=`<option value="${i}" ${+sel===i?"selected":""}>${i}${i>=29?" (or last day)":""}</option>`;return o};
 const amtVal=v=>v?esc((+v).toFixed(2).replace(".",",")):"";
+const curKey=()=>ym(today());
+// Month choices for a slip: a year back to three months ahead, plus the slip's own month if outside that
+function monthChoices(extra){
+  const keys=[];for(let n=3;n>=-12;n--)keys.push(shiftKey(curKey(),n));
+  if(extra&&!keys.includes(extra))keys.push(extra);
+  return keys.sort().reverse();
+}
 
 function homeView(){
-  const p=period(today()),s=S.settings;
-  let h=`<div class="top"><h1>Slipwise</h1><span class="label">${fmtD(p.start)} – ${fmtD(p.end)}</span></div>`;
+  const s=S.settings;
+  if(!S.homeKey)S.homeKey=curKey();
+  const p=periodOfKey(S.homeKey),isCur=p.key===curKey();
+  let h=`<div class="top"><h1>Slipwise</h1>
+    <div class="monthnav"><button class="navbtn" id="hm-prev" aria-label="Previous month">‹</button><span class="label">${monthName(p)}</span><button class="navbtn" id="hm-next" aria-label="Next month">›</button></div></div>`;
+  if(!isCur&&S.ready&&s.groceriesLimit) h+=`<div class="banner">You're looking at ${monthName(p)}. <button class="btn small" id="hm-now" style="margin-top:8px">Back to ${MONTHS[today().getMonth()]}</button></div>`;
   if(!S.ready) return h+'<div class="empty"><strong>Opening your budget…</strong></div>';
   if(!s.groceriesLimit){
     return h+`<div class="slip"><span class="label">Set up</span><h2>Let's set your budgets</h2>
     <div class="field"><label for="su-g">Groceries limit per month</label><input id="su-g" class="amtin" inputmode="decimal" placeholder="6 000"></div>
     <div class="field"><label for="su-b">Baby Fund limit per month</label><input id="su-b" class="amtin" inputmode="decimal" placeholder="1 500"><span class="hint">You can switch Baby Fund to one running total later in Settings.</span></div>
-    <div class="field"><label for="su-day">Month starts on day</label><select id="su-day">${dayOpts(s.resetDay)}</select><span class="hint">Payday is a good choice. Both limits reset on this day.</span></div>
     <div class="field"><label for="su-key">Claude key for reading slips</label><input id="su-key" type="password" autocomplete="off" placeholder="sk-ant-…" value="${esc(s.apiKey)}"><span class="hint">Leave it empty to type amounts by hand.</span></div>
-    <p class="hint">End of month payments need no limit. They are added up separately and never come off Groceries or Baby Fund.</p>
+    <p class="hint">Each slip goes into the month you choose (January, February…). End of month payments need no limit. They are added up separately and never come off Groceries or Baby Fund.</p>
     <button class="btn primary" id="su-save">Start budgeting</button></div>`;
   }
   const list=inPeriod(p);
-  const t=today(),daysLeft=dayDiff(t,p.next),elapsed=dayDiff(p.start,t)+1,pacePct=Math.min(100,elapsed/p.days*100);
+  const t=today(),daysLeft=isCur?dayDiff(t,p.next):0,elapsed=isCur?dayDiff(p.start,t)+1:(p.start<t?p.days:0),pacePct=Math.min(100,elapsed/p.days*100);
 
   // Groceries
   const gl=+s.groceriesLimit,gs=potSum(list,"groceries"),gleft=Math.round((gl-gs)*100)/100,gpct=Math.min(100,gs/gl*100);
-  const gstat=gleft<0?'<span class="pill bad">Over budget</span>':gpct>pacePct+8?'<span class="pill warn">Ahead of pace</span>':'<span class="pill good">On track</span>';
+  const gstat=gleft<0?'<span class="pill bad">Over budget</span>':isCur&&gpct>pacePct+8?'<span class="pill warn">Ahead of pace</span>':'<span class="pill good">On track</span>';
   h+=`<div class="slip">
     <div class="row"><span class="label potname"><span class="dot groceries"></span>Groceries left</span>${gstat}</div>
     <div class="big ${gleft<0?"neg":""}">${money(gleft)}</div>
-    <div class="meter"><i class="${gleft<0?"over":""}" style="width:${gpct}%"></i><b style="left:calc(${pacePct}% - 1px)"></b></div>
+    <div class="meter"><i class="${gleft<0?"over":""}" style="width:${gpct}%"></i>${isCur?`<b style="left:calc(${pacePct}% - 1px)"></b>`:""}</div>
     <div class="row"><span class="muted">Spent of ${money(gl)}</span><span>${money(gs)}</span></div>
-    <div class="rule"></div>
-    <div class="row"><span class="muted">${daysLeft} day${daysLeft===1?"":"s"} until reset (${fmtD(p.next)})</span><span>${gleft>0?money(gleft/daysLeft)+"/day":"—"}</span></div>
+    ${isCur?`<div class="rule"></div>
+    <div class="row"><span class="muted">${daysLeft} day${daysLeft===1?"":"s"} left in ${MONTHS[p.start.getMonth()]}</span><span>${gleft>0?money(gleft/daysLeft)+"/day":"—"}</span></div>`:""}
   </div>`;
 
   // Baby Fund + Month-end
@@ -377,13 +389,13 @@ function homeView(){
   const bpct=bl>0?Math.min(100,bSpent/bl*100):0;
   const baby=bl>0?`<div class="amt ${bleft<0?"neg":""}">${money(bleft)}</div>
       <div class="meter baby"><i class="${bleft<0?"over":""}" style="width:${bpct}%"></i></div>
-      <div class="sub">${fundMode()?`left in fund of ${money(bl)} · ${money(bMonth)} this month`:`left of ${money(bl)} this month`}</div>`
-    :`<div class="amt">${money(bMonth)}</div><div class="sub">spent this month · no limit set</div>`;
+      <div class="sub">${fundMode()?`left in fund of ${money(bl)} · ${money(bMonth)} in ${MONTHS[p.start.getMonth()]}`:`left of ${money(bl)} in ${MONTHS[p.start.getMonth()]}`}</div>`
+    :`<div class="amt">${money(bMonth)}</div><div class="sub">spent in ${MONTHS[p.start.getMonth()]} · no limit set</div>`;
   const xs=potSum(list,"extras"),xn=list.filter(e=>potOf(e)==="extras").length;
   h+=`<div class="pair">
     <div class="mini baby"><span class="label potname"><span class="dot baby"></span>Baby Fund</span>${baby}</div>
     <div class="mini extras"><span class="label potname"><span class="dot extras"></span>Month-end</span>
-      <div class="amt">${money(xs)}</div><div class="sub">extras from salary this month · ${xn} payment${xn===1?"":"s"} · not deducted anywhere</div></div>
+      <div class="amt">${money(xs)}</div><div class="sub">extras from salary in ${MONTHS[p.start.getMonth()]} · ${xn} payment${xn===1?"":"s"} · not deducted anywhere</div></div>
   </div>`;
 
   h+=`<div class="actions">
@@ -394,18 +406,18 @@ function homeView(){
   if(!s.apiKey.trim()) h+='<div class="banner warn">No Claude key yet, so photos are saved but you type the total yourself. Add a key in Settings.</div>';
 
   const shown=list.filter(e=>S.filter==="all"||potOf(e)===S.filter).sort((a,b)=>b.date.localeCompare(a.date)||(b.createdAt||0)-(a.createdAt||0));
-  h+=`<div class="top"><h2>This month's slips</h2><span class="label">${shown.length} shown</span></div>
+  h+=`<div class="top"><h2>${MONTHS[p.start.getMonth()]} slips</h2><span class="label">${shown.length} shown</span></div>
   <div class="chips" role="group" aria-label="Show slips from">${[["all","All"],...POT_IDS.map(k=>[k,POTS[k].short])].map(([k,n])=>`<button data-filter="${k}" aria-pressed="${S.filter===k}">${k!=="all"?`<span class="dot ${k}"></span>`:""}${n}</button>`).join("")}</div>`;
   h+=shown.length?'<div class="list">'+shown.map(itemRow).join("")+'</div>'
-    :`<div class="empty"><strong>No slips ${S.filter==="all"?"yet this month":"in "+POTS[S.filter].name+" this month"}</strong>Snap a till slip after you pay and choose where it belongs.</div>`;
+    :`<div class="empty"><strong>No slips ${S.filter==="all"?"in "+MONTHS[p.start.getMonth()]+" yet":"in "+POTS[S.filter].name+" for "+MONTHS[p.start.getMonth()]}</strong>Snap a till slip after you pay, then choose the pot and the month it belongs to.</div>`;
   return h;
 }
 const itemRow=e=>`<button class="item" data-edit="${esc(e.id)}"><span class="m">${esc(e.merchant||"Unnamed")}</span><span class="a">${money(-e.amount)}</span><span class="s"><span class="dot ${potOf(e)}"></span>${POTS[potOf(e)].short} · ${fmtD(parse(e.date))}${e.hasPhoto?" · "+CAMERA_ICON:""}</span></button>`;
 
 /* ---------- sheets ---------- */
 function periodKeys(){
-  const set=new Set([period(today()).key]);
-  S.expenses.forEach(e=>{const d=countDate(e);if(d)set.add(period(d).key)});
+  const set=new Set([curKey()]);
+  S.expenses.forEach(e=>set.add(monthOf(e)));
   return [...set].sort().reverse();
 }
 function sheetView(){
@@ -416,12 +428,12 @@ function sheetView(){
 function monthView(){
   const keys=periodKeys();
   if(!S.sheetKey||!keys.includes(S.sheetKey))S.sheetKey=keys[0];
-  const p=period(parse(S.sheetKey)),list=inPeriod(p).sort((a,b)=>a.date.localeCompare(b.date)||(a.createdAt||0)-(b.createdAt||0));
-  const s=S.settings,t=today(),isCurrent=t>=p.start&&t<p.next;
+  const p=periodOfKey(S.sheetKey),list=inPeriod(p).sort((a,b)=>a.date.localeCompare(b.date)||(a.createdAt||0)-(b.createdAt||0));
+  const s=S.settings,t=today(),isCurrent=p.key===curKey();
   const gl=+s.groceriesLimit||0,gs=potSum(list,"groceries"),bl=+s.babyLimit||0,bs=potSum(list,"baby"),xs=potSum(list,"extras");
   const gcount=list.filter(e=>potOf(e)==="groceries").length,bcount=list.filter(e=>potOf(e)==="baby").length,xcount=list.filter(e=>potOf(e)==="extras").length;
   const leftRow=(lim,sp)=>lim>0?`<div class="row"><span class="muted">${sp>lim?"Over by":"Left"}</span><span class="${sp>lim?"neg":""}">${money(Math.abs(lim-sp))}</span></div>`:"";
-  let h=`<div class="field"><label for="sheet-period">Budget month</label><select id="sheet-period">${keys.map(k=>{const q=period(parse(k));return `<option value="${k}" ${k===S.sheetKey?"selected":""}>${fmtDY(q.start)} – ${fmtDY(q.end)}${k===period(t).key?" (current)":""}</option>`}).join("")}</select></div>
+  let h=`<div class="field"><label for="sheet-period">Month</label><select id="sheet-period">${keys.map(k=>`<option value="${k}" ${k===S.sheetKey?"selected":""}>${monthName(periodOfKey(k))}${k===curKey()?" (current)":""}</option>`).join("")}</select></div>
   <div class="card">
     <div class="potsum"><h3 class="potname"><span class="dot groceries"></span>Groceries</h3>
       <div class="row"><span class="muted">Spent (${gcount} slip${gcount===1?"":"s"})</span><span>${money(gs)}</span></div>
@@ -438,7 +450,7 @@ function monthView(){
   <div class="card"><h2>Groceries through the month</h2>${paceChart(p,list.filter(e=>potOf(e)==="groceries"),gl,isCurrent?t:p.end)}<div class="legend"><span>Spent so far</span><span class="p">Even pace to limit</span></div></div>
   <div class="top"><h2>All slips</h2><button class="btn small" id="export" ${list.length?"":"disabled"}>Download sheet (CSV)</button></div>`;
   if(list.length) h+=`<div class="tablewrap"><table><thead><tr><th>Date</th><th>Shop</th><th>Pot</th><th class="n">Amount</th></tr></thead><tbody>${list.map(e=>`<tr data-edit="${esc(e.id)}"><td>${fmtD(parse(e.date))}</td><td>${esc(e.merchant||"")}</td><td><span class="potname"><span class="dot ${potOf(e)}"></span>${POTS[potOf(e)].short}</span></td><td class="n">${money(e.amount)}</td></tr>`).join("")}</tbody></table></div>`;
-  else h+='<div class="empty"><strong>Nothing here yet</strong>Slips you add show up in this sheet, grouped by budget month.</div>';
+  else h+='<div class="empty"><strong>Nothing here yet</strong>Slips you add show up in this sheet under the month you chose for them.</div>';
   return h;
 }
 function yearRows(y){
@@ -449,17 +461,16 @@ function yearRows(y){
 }
 function yearOptions(){
   const set=new Set([today().getFullYear()]);
-  S.expenses.forEach(e=>{const d=countDate(e);if(d)set.add(period(d).start.getFullYear())});
+  S.expenses.forEach(e=>set.add(+monthOf(e).slice(0,4)));
   return [...set].sort().reverse();
 }
 function yearView(){
   const years=yearOptions();
   if(!S.sheetYear||!years.includes(S.sheetYear))S.sheetYear=years[0];
-  const rows=yearRows(S.sheetYear),s=S.settings,gl=+s.groceriesLimit||0,bl=+s.babyLimit||0,cur=period(today()).key;
+  const rows=yearRows(S.sheetYear),s=S.settings,gl=+s.groceriesLimit||0,bl=+s.babyLimit||0,cur=curKey();
   const tot=rows.reduce((a,r)=>({g:a.g+r.g,b:a.b+r.b,x:a.x+r.x}),{g:0,b:0,x:0});
-  const rd=s.resetDay||1;
   return `<div class="field"><label for="sheet-year">Year</label><select id="sheet-year">${years.map(y=>`<option value="${y}" ${y===S.sheetYear?"selected":""}>${y}</option>`).join("")}</select>
-    <span class="hint">${rd===1?"Each row is one calendar month.":`Each row is the budget month that starts on the ${rd}${rd===1?"st":rd===2?"nd":rd===3?"rd":"th"} of that month.`} Red means over the limit.</span></div>
+    <span class="hint">Each row shows the slips you put in that month. Red means over the limit.</span></div>
   <div class="card"><div class="row" style="font-size:14px"><span class="muted">Groceries this year</span><span>${money(tot.g)}</span></div>
     <div class="row" style="font-size:14px"><span class="muted">Baby Fund this year</span><span>${money(tot.b)}</span></div>
     <div class="row" style="font-size:14px"><span class="muted">Month-end extras this year</span><span>${money(tot.x)}</span></div>
@@ -472,8 +483,9 @@ function yearView(){
 function paceChart(p,list,lim,until){
   const W=320,H=150,L=44,R=10,T=12,B=22,iw=W-L-R,ih=H-T-B;
   const byDay=new Array(p.days).fill(0);
-  list.forEach(e=>{const i=dayDiff(p.start,countDate(e));if(i>=0&&i<p.days)byDay[i]+=+e.amount||0});
-  const lastI=Math.min(p.days-1,dayDiff(p.start,until));
+  // Slips chosen for this month but captured on another date sit on the first or last day
+  list.forEach(e=>{const i=Math.max(0,Math.min(p.days-1,dayDiff(p.start,countDate(e))));byDay[i]+=+e.amount||0});
+  const lastI=Math.max(0,Math.min(p.days-1,dayDiff(p.start,until)));
   let c=0;const cum=byDay.map(v=>c+=v);
   const top=Math.max(lim,cum[lastI]||0,1)*1.08;
   const x=i=>L+(p.days>1?i/(p.days-1):0)*iw,y=v=>T+ih-(v/top)*ih;
@@ -494,10 +506,9 @@ function settingsView(){
     <div class="field"><label for="st-g">Groceries limit per month</label><input id="st-g" class="amtin" inputmode="decimal" value="${amtVal(s.groceriesLimit)}" placeholder="6 000"></div>
     <div class="field"><span class="flabel">Baby Fund works as</span>
       <div class="seg two" role="group" aria-label="Baby Fund works as"><button data-babymode="monthly" aria-pressed="${!fundMode()}">A monthly limit</button><button data-babymode="fund" aria-pressed="${fundMode()}">One running fund</button></div>
-      <span class="hint" id="bm-hint">${fundMode()?"One total that baby slips come off until it runs out. It does not reset each month.":"Resets on the start day each month, like Groceries."}</span></div>
+      <span class="hint" id="bm-hint">${fundMode()?"One total that baby slips come off until it runs out. It does not reset each month.":"Starts fresh every month, like Groceries."}</span></div>
     <div class="field"><label for="st-b" id="st-b-label">${fundMode()?"Baby Fund total":"Baby Fund limit per month"}</label><input id="st-b" class="amtin" inputmode="decimal" value="${amtVal(s.babyLimit)}" placeholder="1 500"></div>
-    <div class="field" id="fund-start-field" ${fundMode()?"":"hidden"}><label for="st-bstart">Fund started on</label><input id="st-bstart" type="date" value="${esc(s.babyFundStart||ymd(today()))}"><span class="hint">Baby slips from this date on come off the fund.</span></div>
-    <div class="field"><label for="st-day">Month starts on day</label><select id="st-day">${dayOpts(s.resetDay)}</select><span class="hint">Monthly limits reset and a new monthly sheet starts on this day. In short months, days 29–31 fall on the last day.</span></div>
+    <div class="field" id="fund-start-field" ${fundMode()?"":"hidden"}><label for="st-bstart">Fund started in</label><select id="st-bstart">${monthChoices(fundStartKey()==="2000-01"?null:fundStartKey()).map(k=>`<option value="${k}" ${k===(s.babyFundStart?fundStartKey():curKey())?"selected":""}>${monthName(periodOfKey(k))}</option>`).join("")}</select><span class="hint">Baby slips from this month on come off the fund.</span></div>
     <div class="field"><label for="st-cur">Currency symbol</label><input id="st-cur" value="${esc(s.currency||"R")}" maxlength="4"></div>
     <p class="hint">End of month payments have no limit. They only add up, so you can see your total extras.</p>
   </div>
@@ -522,22 +533,25 @@ function bindView(){
   on("su-save","click",async()=>{
     const g=num($("#su-g").value),b=num($("#su-b").value);
     if(!(g>0)){toast("Enter a Groceries limit above zero");return}
-    await putSettings({groceriesLimit:g,babyLimit:b>0?b:0,resetDay:+$("#su-day").value,apiKey:$("#su-key").value.trim()});toast("Budgets set");
+    await putSettings({groceriesLimit:g,babyLimit:b>0?b:0,apiKey:$("#su-key").value.trim()});toast("Budgets set");
   });
+  on("hm-prev","click",()=>{S.homeKey=shiftKey(S.homeKey,-1);render()});
+  on("hm-next","click",()=>{S.homeKey=shiftKey(S.homeKey,1);render()});
+  on("hm-now","click",()=>{S.homeKey=curKey();render()});
   let pendingMode=S.settings.babyMode;
   document.querySelectorAll("[data-babymode]").forEach(btn=>btn.addEventListener("click",()=>{
     pendingMode=btn.dataset.babymode;
     document.querySelectorAll("[data-babymode]").forEach(x=>x.setAttribute("aria-pressed",String(x===btn)));
     const f=pendingMode==="fund";
     $("#st-b-label").textContent=f?"Baby Fund total":"Baby Fund limit per month";
-    $("#bm-hint").textContent=f?"One total that baby slips come off until it runs out. It does not reset each month.":"Resets on the start day each month, like Groceries.";
+    $("#bm-hint").textContent=f?"One total that baby slips come off until it runs out. It does not reset each month.":"Starts fresh every month, like Groceries.";
     $("#fund-start-field").hidden=!f;
   }));
   on("st-save","click",async()=>{
     const g=num($("#st-g").value),b=num($("#st-b").value);
     if(!(g>0)){toast("Enter a Groceries limit above zero");return}
-    await putSettings({groceriesLimit:g,babyLimit:b>0?b:0,babyMode:pendingMode,babyFundStart:$("#st-bstart").value||ymd(today()),
-      resetDay:+$("#st-day").value,currency:($("#st-cur").value.trim()||"R").slice(0,4),apiKey:$("#st-key").value.trim(),model:$("#st-model").value});
+    await putSettings({groceriesLimit:g,babyLimit:b>0?b:0,babyMode:pendingMode,babyFundStart:$("#st-bstart").value||curKey(),
+      currency:($("#st-cur").value.trim()||"R").slice(0,4),apiKey:$("#st-key").value.trim(),model:$("#st-model").value});
     toast("Settings saved");
   });
   on("st-test","click",async()=>{
@@ -573,6 +587,7 @@ let readCtl=null;
 async function openEditor(exp,file){
   const isNew=!exp,hasKey=!!S.settings.apiKey.trim();
   const d=exp||{merchant:"",amount:"",date:ymd(today()),pot:S.filter!=="all"?S.filter:"groceries",items:[]};
+  const slipMonth=exp?monthOf(exp):(S.homeKey||curKey());
   let pot=potOf(d),potTouched=!isNew||S.filter!=="all";
   $("#modal").innerHTML=`<div class="overlay" id="ov"><div class="sheet" role="dialog" aria-modal="true" aria-label="${isNew?"Add slip":"Edit slip"}">
     <div class="grab"></div>
@@ -582,10 +597,10 @@ async function openEditor(exp,file){
     <div class="field"><span class="flabel">Where does it belong?</span>
       <div class="seg" role="group" aria-label="Pot">${POT_IDS.map(k=>`<button data-pot="${k}" aria-pressed="${k===pot}"><span class="dot ${k}"></span>${POTS[k].short}</button>`).join("")}</div>
       <span class="hint" id="ed-pot-hint"></span></div>
+    <div class="field"><label for="ed-month">Month it counts in</label><select id="ed-month">${monthChoices(slipMonth).map(k=>`<option value="${k}" ${k===slipMonth?"selected":""}>${monthName(periodOfKey(k))}${k===curKey()?" (this month)":""}</option>`).join("")}</select></div>
     <div class="field"><label for="ed-amount">Total paid</label><input id="ed-amount" class="amtin" inputmode="decimal" value="${d.amount!==""?esc((+d.amount).toFixed(2).replace(".",",")):""}" placeholder="0,00"></div>
     <div class="field"><label for="ed-merchant">Shop or payment</label><input id="ed-merchant" value="${esc(d.merchant)}" placeholder="e.g. Checkers"></div>
-    <div class="field"><label for="ed-date">Date</label><input id="ed-date" type="date" value="${esc(d.date)}">
-      <div id="ed-date-note" class="hint" hidden></div></div>
+    <div class="field"><label for="ed-date">Date on the slip</label><input id="ed-date" type="date" value="${esc(d.date)}"></div>
     <div id="ed-items">${itemsHtml(d.items)}</div>
     <div class="actions">
       <button class="btn" id="ed-cancel">Cancel</button>
@@ -595,24 +610,12 @@ async function openEditor(exp,file){
   const setPot=(k,byUser)=>{
     pot=k;if(byUser)potTouched=true;
     document.querySelectorAll("[data-pot]").forEach(b=>b.setAttribute("aria-pressed",String(b.dataset.pot===k)));
-    $("#ed-pot-hint").textContent=k==="extras"?"Adds to your month-end extras. Not deducted from Groceries or Baby Fund.":k==="baby"?(fundMode()?"Comes off the Baby Fund.":"Comes off this month's Baby Fund limit."):"Comes off this month's Groceries limit.";
+    $("#ed-pot-hint").textContent=k==="extras"?"Adds to your month-end extras. Not deducted from Groceries or Baby Fund.":k==="baby"?(fundMode()?"Comes off the Baby Fund.":"Comes off the Baby Fund limit for the month you choose below."):"Comes off the Groceries limit for the month you choose below.";
     if(isNew)$("#ed-save").textContent=k==="extras"?"Add to month-end":"Deduct from "+POTS[k].name;
   };
   document.querySelectorAll("[data-pot]").forEach(b=>b.addEventListener("click",()=>setPot(b.dataset.pot,true)));
   setPot(pot,false);
-  // The slip keeps its own date, but counts in the budget month it was captured in
   const addedOn=exp?(exp.addedOn||ymd(countDate(exp))):ymd(today());
-  const countsIn=period(parse(addedOn));
-  const checkDate=()=>{
-    const dt=parse($("#ed-date").value),n=$("#ed-date-note");
-    if(!dt||period(dt).key===countsIn.key){n.hidden=true;return}
-    n.textContent=`Counts in the ${fmtD(countsIn.start)} – ${fmtD(countsIn.end)} month, when it was captured. The slip date stays as it is.`;
-    n.hidden=false;
-  };
-  $("#ed-date").addEventListener("change",checkDate);
-  $("#ed-date").addEventListener("input",checkDate);
-  checkDate();
-  window.__slipCheckDate=checkDate;
   let items=d.items||[],photo=null,thumbUrl=null;
   const showPhoto=blob=>{thumbUrl=URL.createObjectURL(blob);$("#ed-photo").innerHTML=`<button class="thumbbtn" id="ed-thumb" aria-label="View photo full size"><img class="thumb" src="${thumbUrl}" alt="Slip photo"></button>`;$("#ed-thumb").onclick=()=>openViewer(blob,exp||{date:$("#ed-date").value,merchant:$("#ed-merchant").value})};
   const close=()=>{if(readCtl){readCtl.abort();readCtl=null}if(thumbUrl)URL.revokeObjectURL(thumbUrl);$("#modal").innerHTML=""};
@@ -628,12 +631,13 @@ async function openEditor(exp,file){
     if(!(amount>0)){toast("Enter the total paid");$("#ed-amount").focus();return}
     if(!parse(date)){toast("Pick a date");return}
     if(file&&!photo){toast("Still preparing the photo…");return}
-    const row={id:exp?exp.id:newId(),pot,merchant:$("#ed-merchant").value.trim().slice(0,80),amount,date,addedOn,items:items.slice(0,40),createdAt:exp?.createdAt||Date.now(),hasPhoto:!!(exp&&exp.hasPhoto)};
+    const month=$("#ed-month").value||curKey();
+    const row={id:exp?exp.id:newId(),pot,month,merchant:$("#ed-merchant").value.trim().slice(0,80),amount,date,addedOn,items:items.slice(0,40),createdAt:exp?.createdAt||Date.now(),hasPhoto:!!(exp&&exp.hasPhoto)};
     const btn=$("#ed-save");btn.disabled=true;
     try{
       await putExpense(row,photo);close();
       const what=pot==="extras"?"added to month-end":"off "+POTS[pot].name;
-      toast(!isNew?"Slip updated":money(amount)+" "+what);
+      toast((!isNew?"Slip updated":money(amount)+" "+what)+" · "+monthName(periodOfKey(month)));
     }catch(e){btn.disabled=false;toast(e&&e.name==="QuotaExceededError"?"Phone storage is full. Free up space, then try again.":"Couldn't save. Try again.")}
   });
   if(exp&&exp.hasPhoto){const b=await dbGet("photos",exp.id).catch(()=>null);if(b&&$("#ed-photo"))showPhoto(b)}
@@ -667,7 +671,7 @@ If the year is missing, pick the most recent date that is not after today. If th
     if(!r||r.error||!(num(r.total)>0))throw {code:"notslip"};
     const amt=$("#ed-amount");if(!amt.value)amt.value=num(r.total).toFixed(2).replace(".",",");
     if(r.merchant&&!$("#ed-merchant").value)$("#ed-merchant").value=String(r.merchant).slice(0,80);
-    const d=parse(r.date);if(d&&d<=today()&&dayDiff(d,today())<400){$("#ed-date").value=ymd(d);if(window.__slipCheckDate)window.__slipCheckDate()}
+    const d=parse(r.date);if(d&&d<=today()&&dayDiff(d,today())<400)$("#ed-date").value=ymd(d);
     if(typeof r.pot==="string")suggestPot(r.pot.trim().toLowerCase());
     const it=Array.isArray(r.items)?r.items.filter(i=>i&&i.name).map(i=>({name:String(i.name).slice(0,60),amount:num(i.amount)||0})).slice(0,30):[];
     setItems(it);$("#ed-items").innerHTML=itemsHtml(it);
@@ -682,22 +686,22 @@ If the year is missing, pick the most recent date that is not after today. If th
 const csvq=v=>'"'+String(v??"").replace(/"/g,'""')+'"';
 const csvBlob=rows=>new Blob(["﻿"+rows.map(r=>r.map(csvq).join(",")).join("\r\n")],{type:"text/csv"});
 async function exportMonthCsv(){
-  const p=period(parse(S.sheetKey)),list=inPeriod(p).sort((a,b)=>a.date.localeCompare(b.date)),s=S.settings;
+  const p=periodOfKey(S.sheetKey),list=inPeriod(p).sort((a,b)=>a.date.localeCompare(b.date)),s=S.settings;
   const gl=+s.groceriesLimit||0,bl=+s.babyLimit||0,gs=potSum(list,"groceries"),bs=potSum(list,"baby"),xs=potSum(list,"extras");
-  const rows=[["Budget month",`${ymd(p.start)} to ${ymd(p.end)}`],[],["Date","Shop / payment","Pot","Amount"]];
+  const rows=[["Month",monthName(p)],[],["Date on slip","Shop / payment","Pot","Amount"]];
   list.forEach(e=>rows.push([e.date,e.merchant,POTS[potOf(e)].name,(+e.amount).toFixed(2)]));
   rows.push([],["Pot","Spent","Limit","Left"],
     ["Groceries",gs.toFixed(2),gl.toFixed(2),(gl-gs).toFixed(2)],
     fundMode()?["Baby Fund (running fund)",bs.toFixed(2),bl.toFixed(2),(bl-babyFundSpent()).toFixed(2)]:["Baby Fund",bs.toFixed(2),bl?bl.toFixed(2):"",bl?(bl-bs).toFixed(2):""],
     ["End of month payments (extras)",xs.toFixed(2),"",""],
     ["Total",(gs+bs+xs).toFixed(2),"",""]);
-  if(!await saveFile(`slipwise-${ymd(p.start)}-to-${ymd(p.end)}.csv`,csvBlob(rows)))toast("Sheet saved to Downloads");
+  if(!await saveFile(`slipwise-${p.key}-${MONTHS[p.start.getMonth()]}.csv`,csvBlob(rows)))toast("Sheet saved to Downloads");
 }
 async function exportYearCsv(){
-  const y=S.sheetYear,rows=[["Year",String(y)],[],["Month","Budget month","Groceries","Baby Fund","End of month payments","Total"]];
+  const y=S.sheetYear,rows=[["Year",String(y)],[],["Month","Groceries","Baby Fund","End of month payments","Total"]];
   const yr=yearRows(y);let g=0,b=0,x=0;
-  yr.forEach(r=>{g+=r.g;b+=r.b;x+=r.x;rows.push([r.name,`${ymd(r.p.start)} to ${ymd(r.p.end)}`,r.g.toFixed(2),r.b.toFixed(2),r.x.toFixed(2),(r.g+r.b+r.x).toFixed(2)])});
-  rows.push(["Total","",g.toFixed(2),b.toFixed(2),x.toFixed(2),(g+b+x).toFixed(2)]);
+  yr.forEach(r=>{g+=r.g;b+=r.b;x+=r.x;rows.push([r.name,r.g.toFixed(2),r.b.toFixed(2),r.x.toFixed(2),(r.g+r.b+r.x).toFixed(2)])});
+  rows.push(["Total",g.toFixed(2),b.toFixed(2),x.toFixed(2),(g+b+x).toFixed(2)]);
   if(!await saveFile(`slipwise-${y}.csv`,csvBlob(rows)))toast("Year sheet saved to Downloads");
 }
 async function backup(){
