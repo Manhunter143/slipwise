@@ -581,7 +581,8 @@ async function openEditor(exp,file){
       <span class="hint" id="ed-pot-hint"></span></div>
     <div class="field"><label for="ed-amount">Total paid</label><input id="ed-amount" class="amtin" inputmode="decimal" value="${d.amount!==""?esc((+d.amount).toFixed(2).replace(".",",")):""}" placeholder="0,00"></div>
     <div class="field"><label for="ed-merchant">Shop or payment</label><input id="ed-merchant" value="${esc(d.merchant)}" placeholder="e.g. Checkers"></div>
-    <div class="field"><label for="ed-date">Date</label><input id="ed-date" type="date" value="${esc(d.date)}"></div>
+    <div class="field"><label for="ed-date">Date</label><input id="ed-date" type="date" value="${esc(d.date)}">
+      <div id="ed-date-warn" class="banner warn" hidden><span id="ed-date-msg"></span> <button class="btn small" id="ed-today" style="margin-top:8px">Use today's date</button></div></div>
     <div id="ed-items">${itemsHtml(d.items)}</div>
     <div class="actions">
       <button class="btn" id="ed-cancel">Cancel</button>
@@ -596,6 +597,20 @@ async function openEditor(exp,file){
   };
   document.querySelectorAll("[data-pot]").forEach(b=>b.addEventListener("click",()=>setPot(b.dataset.pot,true)));
   setPot(pot,false);
+  // Warn when the date puts the slip in a different budget month than the current one
+  const checkDate=()=>{
+    const dt=parse($("#ed-date").value),cur=period(today()),w=$("#ed-date-warn");
+    if(!dt){w.hidden=true;return}
+    const p=period(dt);
+    if(p.key===cur.key){w.hidden=true;return}
+    $("#ed-date-msg").textContent=`This date falls in the ${fmtD(p.start)} – ${fmtDY(p.end)} budget month, so it won't count in this month (${fmtD(cur.start)} – ${fmtD(cur.end)}).`;
+    w.hidden=false;
+  };
+  $("#ed-date").addEventListener("change",checkDate);
+  $("#ed-date").addEventListener("input",checkDate);
+  $("#ed-today").addEventListener("click",()=>{$("#ed-date").value=ymd(today());checkDate()});
+  checkDate();
+  window.__slipCheckDate=checkDate;
   let items=d.items||[],photo=null,thumbUrl=null;
   const showPhoto=blob=>{thumbUrl=URL.createObjectURL(blob);$("#ed-photo").innerHTML=`<button class="thumbbtn" id="ed-thumb" aria-label="View photo full size"><img class="thumb" src="${thumbUrl}" alt="Slip photo"></button>`;$("#ed-thumb").onclick=()=>openViewer(blob,exp||{date:$("#ed-date").value,merchant:$("#ed-merchant").value})};
   const close=()=>{if(readCtl){readCtl.abort();readCtl=null}if(thumbUrl)URL.revokeObjectURL(thumbUrl);$("#modal").innerHTML=""};
@@ -615,7 +630,9 @@ async function openEditor(exp,file){
     const btn=$("#ed-save");btn.disabled=true;
     try{
       await putExpense(row,photo);close();
-      toast(!isNew?"Slip updated":pot==="extras"?money(amount)+" added to month-end":money(amount)+" off "+POTS[pot].name);
+      const sp=period(parse(date)),inThis=sp.key===period(today()).key;
+      const what=pot==="extras"?"added to month-end":"off "+POTS[pot].name;
+      toast(inThis?(!isNew?"Slip updated":money(amount)+" "+what):`Saved in the ${fmtD(sp.start)} – ${fmtD(sp.end)} month. See Sheets to find it.`);
     }catch(e){btn.disabled=false;toast(e&&e.name==="QuotaExceededError"?"Phone storage is full. Free up space, then try again.":"Couldn't save. Try again.")}
   });
   if(exp&&exp.hasPhoto){const b=await dbGet("photos",exp.id).catch(()=>null);if(b&&$("#ed-photo"))showPhoto(b)}
@@ -649,7 +666,7 @@ If the year is missing, pick the most recent date that is not after today. If th
     if(!r||r.error||!(num(r.total)>0))throw {code:"notslip"};
     const amt=$("#ed-amount");if(!amt.value)amt.value=num(r.total).toFixed(2).replace(".",",");
     if(r.merchant&&!$("#ed-merchant").value)$("#ed-merchant").value=String(r.merchant).slice(0,80);
-    const d=parse(r.date);if(d&&d<=today()&&dayDiff(d,today())<400)$("#ed-date").value=ymd(d);
+    const d=parse(r.date);if(d&&d<=today()&&dayDiff(d,today())<400){$("#ed-date").value=ymd(d);if(window.__slipCheckDate)window.__slipCheckDate()}
     if(typeof r.pot==="string")suggestPot(r.pot.trim().toLowerCase());
     const it=Array.isArray(r.items)?r.items.filter(i=>i&&i.name).map(i=>({name:String(i.name).slice(0,60),amount:num(i.amount)||0})).slice(0,30):[];
     setItems(it);$("#ed-items").innerHTML=itemsHtml(it);
