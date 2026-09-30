@@ -1,0 +1,585 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Slipwise</title>
+<meta name="theme-color" content="#2446C9">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon-192.png">
+<link rel="apple-touch-icon" href="icon-192.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,800&family=Figtree:wght@400;500;600&family=JetBrains+Mono:wght@400;600&display=swap">
+<style>
+/* Layout: phone-first single column; a till-slip card carries the budget, bottom tab bar switches Budget / Sheet / Settings */
+:root{
+  --bg:#EDF0EE; --paper:#FFFFFF; --ink:#1B2420; --muted:#5E6B66; --line:#D5DCD8;
+  --accent:#2446C9; --accent-ink:#FFFFFF; --hi:#F2E24A;
+  --good:#1E7F4F; --warn:#A86400; --bad:#C0362C; --shade:rgba(20,28,25,.5);
+  --f-display:"Bricolage Grotesque",ui-sans-serif,system-ui,sans-serif;
+  --f-body:"Figtree",ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  --f-mono:"JetBrains Mono",ui-monospace,"Roboto Mono",Menlo,Consolas,monospace;
+  color-scheme:light;
+}
+@media (prefers-color-scheme: dark){:root{
+  --bg:#111614; --paper:#1A211E; --ink:#E8EEEB; --muted:#93A19B; --line:#2C3531;
+  --accent:#8FA6FF; --accent-ink:#0C1330; --hi:#D9C93A;
+  --good:#4CC38A; --warn:#E3A33B; --bad:#F07166; --shade:rgba(0,0,0,.65); color-scheme:dark}}
+*{box-sizing:border-box}
+html,body{background:var(--bg);color:var(--ink);margin:0}
+body{font-family:var(--f-body);font-size:15px;line-height:1.45;padding-inline:16px;padding-block:calc(18px + env(safe-area-inset-top,0px)) calc(96px + env(safe-area-inset-bottom,0px));-webkit-tap-highlight-color:transparent}
+[hidden]{display:none!important}
+img{max-width:100%}
+.wrap{max-width:560px;margin:0 auto;display:flex;flex-direction:column;gap:18px}
+h1,h2{font-family:var(--f-display);margin:0;text-wrap:balance;letter-spacing:-.01em}
+h1{font-size:22px;font-weight:800}
+h2{font-size:18px;font-weight:600}
+p{margin:0}
+.mono{font-family:var(--f-mono);font-variant-numeric:tabular-nums}
+.muted{color:var(--muted)}
+.label{font-size:11px;text-transform:uppercase;letter-spacing:.09em;color:var(--muted);font-weight:600}
+.top{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap}
+.banner{font-size:13px;padding:10px 12px;border:1px dashed var(--line);border-radius:8px;color:var(--muted)}
+.banner.warn{border-color:var(--warn);color:var(--warn)}
+.slip{position:relative;background:var(--paper);padding:20px 18px 26px;border-radius:6px 6px 0 0;display:flex;flex-direction:column;gap:12px;margin-bottom:8px}
+.slip::after{content:"";position:absolute;left:0;right:0;bottom:-10px;height:10px;
+  background:linear-gradient(135deg,var(--paper) 50%,transparent 50%) 0 0/14px 10px repeat-x,
+             linear-gradient(-135deg,var(--paper) 50%,transparent 50%) 0 0/14px 10px repeat-x}
+.slip .rule{border-top:1px dashed var(--line)}
+.big{font-family:var(--f-mono);font-weight:600;font-size:clamp(32px,10vw,44px);line-height:1.05;letter-spacing:-.02em;font-variant-numeric:tabular-nums}
+.big.neg{color:var(--bad)}
+.meter{height:14px;border-radius:3px;background:var(--bg);overflow:hidden;position:relative}
+.meter i{position:absolute;inset:0 auto 0 0;background:var(--hi);display:block}
+.meter i.over{background:var(--bad)}
+.meter b{position:absolute;top:0;bottom:0;width:2px;background:var(--ink);opacity:.55}
+.row{display:flex;justify-content:space-between;gap:10px;font-size:13px}
+.row span:last-child{font-family:var(--f-mono);font-variant-numeric:tabular-nums;text-align:right}
+.pill{display:inline-block;font-size:11px;font-weight:600;padding:2px 8px;border-radius:99px;border:1px solid currentColor}
+.pill.good{color:var(--good)} .pill.warn{color:var(--warn)} .pill.bad{color:var(--bad)}
+.actions{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.btn{appearance:none;border:1px solid var(--line);background:var(--paper);color:var(--ink);font:600 15px var(--f-body);padding:13px 14px;border-radius:10px;cursor:pointer;text-align:center;display:flex;align-items:center;justify-content:center;gap:8px}
+.btn.primary{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
+.btn.wide{grid-column:1/-1;padding:16px;font-size:16px}
+.btn.danger{color:var(--bad)}
+.btn.small{padding:8px 12px;font-size:13px}
+.btn:disabled{opacity:.5;cursor:default}
+.btn:focus-visible,input:focus-visible,select:focus-visible,.tab:focus-visible,.item:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.btn svg{width:20px;height:20px}
+.list{display:flex;flex-direction:column;background:var(--paper);border-radius:10px;overflow:hidden}
+.item{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:2px 12px;padding:12px 14px;border:0;border-bottom:1px solid var(--line);cursor:pointer;background:none;text-align:left;color:inherit;font:inherit;width:100%}
+.item:last-child{border-bottom:0}
+.item .m{font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.item .a{font-family:var(--f-mono);font-variant-numeric:tabular-nums;font-weight:600;text-align:right}
+.item .s{font-size:12px;color:var(--muted);grid-column:1/-1;display:flex;gap:6px;align-items:center}
+.item .s svg{width:13px;height:13px}
+.empty{background:var(--paper);border-radius:10px;padding:22px 18px;display:flex;flex-direction:column;gap:6px;color:var(--muted);font-size:14px}
+.empty strong{color:var(--ink);font-family:var(--f-display);font-size:16px}
+.card{background:var(--paper);border-radius:10px;padding:16px;display:flex;flex-direction:column;gap:12px}
+.stats{display:grid;grid-template-columns:repeat(2,1fr);gap:12px 16px}
+.stats div{display:flex;flex-direction:column;gap:2px}
+.stats .v{font-family:var(--f-mono);font-variant-numeric:tabular-nums;font-size:17px;font-weight:600}
+.cat{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:4px 10px;font-size:13px}
+.cat .bar{grid-column:1/-1;height:8px;background:var(--bg);border-radius:2px;overflow:hidden}
+.cat .bar i{display:block;height:100%;background:var(--accent)}
+.tablewrap{overflow-x:auto;background:var(--paper);border-radius:10px}
+table{border-collapse:collapse;width:100%;font-size:13px}
+th,td{padding:9px 8px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}
+th:first-child,td:first-child{padding-left:12px;white-space:nowrap}
+th:last-child,td:last-child{padding-right:12px;white-space:nowrap}
+td{overflow-wrap:anywhere}
+tbody tr{cursor:pointer}
+th{font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);font-weight:600}
+td.n,th.n{text-align:right;font-family:var(--f-mono);font-variant-numeric:tabular-nums}
+tfoot td{font-weight:600;border-bottom:0}
+svg.chart{width:100%;height:auto;display:block}
+svg.chart .grid{stroke:var(--line);stroke-width:1}
+svg.chart .pace{stroke:var(--muted);stroke-dasharray:4 4;fill:none;stroke-width:1.5}
+svg.chart .spent{stroke:var(--accent);fill:none;stroke-width:2.5;stroke-linejoin:round}
+svg.chart .area{fill:var(--accent);opacity:.12}
+svg.chart .lim{stroke:var(--bad);stroke-width:1;opacity:.6}
+svg.chart text{fill:var(--muted);font:10px var(--f-mono)}
+svg.chart .dot{fill:var(--accent)}
+.legend{display:flex;gap:14px;font-size:12px;color:var(--muted);flex-wrap:wrap}
+.legend span::before{content:"";display:inline-block;width:14px;height:0;border-top:2px solid var(--accent);vertical-align:middle;margin-right:6px}
+.legend span.p::before{border-top:2px dashed var(--muted)}
+.field{display:flex;flex-direction:column;gap:5px}
+.field label{font-size:12px;font-weight:600;color:var(--muted)}
+input,select{font:16px var(--f-body);padding:11px 12px;border-radius:8px;border:1px solid var(--line);background:var(--bg);color:var(--ink);width:100%;min-width:0}
+input.amtin{font-family:var(--f-mono);font-size:20px;font-weight:600}
+.two{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.hint{font-size:12px;color:var(--muted)}
+.hint a{color:var(--accent)}
+.overlay{position:fixed;inset:0;background:var(--shade);display:flex;align-items:flex-end;justify-content:center;z-index:20}
+.sheet{background:var(--paper);width:100%;max-width:560px;max-height:92%;overflow-y:auto;border-radius:16px 16px 0 0;padding:18px 16px calc(18px + env(safe-area-inset-bottom,0px));display:flex;flex-direction:column;gap:14px}
+.sheet .grab{width:40px;height:4px;border-radius:2px;background:var(--line);align-self:center}
+.status{display:flex;gap:10px;align-items:center;font-size:14px;padding:10px 12px;border-radius:8px;background:var(--bg)}
+.status.err{color:var(--bad)}
+.spin{width:16px;height:16px;border-radius:50%;border:2px solid var(--line);border-top-color:var(--accent);animation:sp .8s linear infinite;flex:none}
+@keyframes sp{to{transform:rotate(360deg)}}
+@media (prefers-reduced-motion:reduce){.spin{animation-duration:3s}}
+.thumbbtn{align-self:center;background:none;border:0;padding:0;cursor:zoom-in}
+.thumb{max-height:180px;width:auto;border-radius:6px;border:1px solid var(--line);display:block}
+.viewer{position:fixed;inset:0;background:#000;z-index:40;display:flex;flex-direction:column}
+.viewer .img{flex:1;overflow:auto;display:flex;align-items:flex-start;justify-content:center;padding-top:env(safe-area-inset-top,0px)}
+.viewer img{max-width:100%;height:auto}
+.viewer .bar{display:flex;gap:10px;padding:12px 16px calc(12px + env(safe-area-inset-bottom,0px));background:#111}
+.viewer .bar .btn{flex:1;background:#222;color:#fff;border-color:#333}
+details{font-size:13px}
+details summary{cursor:pointer;color:var(--muted);font-weight:600}
+details ul{list-style:none;padding:8px 0 0;margin:0;display:flex;flex-direction:column;gap:4px}
+details li{display:flex;justify-content:space-between;gap:10px}
+details li span:first-child{min-width:0;overflow-wrap:anywhere}
+details li span:last-child{font-family:var(--f-mono);white-space:nowrap}
+nav.tabs{position:fixed;left:0;right:0;bottom:0;background:var(--paper);border-top:1px solid var(--line);display:flex;justify-content:center;padding:6px 8px calc(6px + env(safe-area-inset-bottom,0px));z-index:10}
+nav.tabs .in{display:grid;grid-template-columns:repeat(3,1fr);width:100%;max-width:560px}
+.tab{appearance:none;background:none;border:0;color:var(--muted);font:600 12px var(--f-body);display:flex;flex-direction:column;align-items:center;gap:3px;padding:6px;cursor:pointer;border-radius:8px}
+.tab svg{width:22px;height:22px}
+.tab[aria-current="page"]{color:var(--accent)}
+.toast{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(84px + env(safe-area-inset-bottom,0px));background:var(--ink);color:var(--bg);padding:10px 16px;border-radius:99px;font-size:14px;font-weight:600;z-index:50;max-width:calc(100% - 32px);text-align:center}
+</style>
+</head>
+<body>
+<div class="wrap" id="app"></div>
+
+<nav class="tabs" aria-label="Sections"><div class="in">
+  <button class="tab" data-tab="home"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3h12v18l-2-1.5L14 21l-2-1.5L10 21l-2-1.5L6 21z"/><path d="M9 8h6M9 12h6"/></svg>Budget</button>
+  <button class="tab" data-tab="sheet"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 10h18M9 10v10"/></svg>Monthly sheet</button>
+  <button class="tab" data-tab="settings"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M4.2 4.2l2.1 2.1M17.7 17.7l2.1 2.1M2 12h3M19 12h3M4.2 19.8l2.1-2.1M17.7 6.3l2.1-2.1"/></svg>Settings</button>
+</div></nav>
+
+<input type="file" id="cam" accept="image/*" capture="environment" hidden>
+<input type="file" id="gallery" accept="image/*" hidden>
+<input type="file" id="restore-file" accept="application/json,.json" hidden>
+<div id="modal"></div>
+<div id="viewer"></div>
+<div id="toastbox"></div>
+
+<script>
+(function(){
+"use strict";
+const CATS=["Groceries","Fuel & transport","Eating out","Household","Health & pharmacy","Clothing","Entertainment","Bills & airtime","Other"];
+const MODELS={"claude-haiku-4-5-20251001":"Claude Haiku 4.5 (cheapest, about R0.07 a slip)","claude-sonnet-5-5":"Claude Sonnet 5.5 (most accurate, about R0.15 a slip)"};
+const DEFAULTS={limit:0,resetDay:1,currency:"R",apiKey:"",model:"claude-haiku-4-5-20251001",setupSkipped:false};
+const S={settings:Object.assign({},DEFAULTS),expenses:[],tab:"home",sheetKey:null,ready:false,storageNote:""};
+
+/* ---------- helpers ---------- */
+const $=s=>document.querySelector(s);
+const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const pad=n=>String(n).padStart(2,"0");
+const ymd=d=>d.getFullYear()+"-"+pad(d.getMonth()+1)+"-"+pad(d.getDate());
+const parse=s=>{const m=/^(\d{4})-(\d{2})-(\d{2})$/.exec(s||"");return m?new Date(+m[1],+m[2]-1,+m[3]):null};
+const dim=(y,m)=>new Date(y,m+1,0).getDate();
+const today=()=>{const d=new Date();return new Date(d.getFullYear(),d.getMonth(),d.getDate())};
+const dayDiff=(a,b)=>Math.round((b-a)/864e5);
+function periodStart(date,rd){
+  const y=date.getFullYear(),m=date.getMonth(),day=Math.min(rd,dim(y,m));
+  if(date.getDate()>=day) return new Date(y,m,day);
+  const p=new Date(y,m-1,1);return new Date(p.getFullYear(),p.getMonth(),Math.min(rd,dim(p.getFullYear(),p.getMonth())));
+}
+function nextStart(start,rd){const n=new Date(start.getFullYear(),start.getMonth()+1,1);return new Date(n.getFullYear(),n.getMonth(),Math.min(rd,dim(n.getFullYear(),n.getMonth())))}
+function period(date){
+  const rd=S.settings.resetDay||1,start=periodStart(date,rd),next=nextStart(start,rd);
+  return {start,next,end:new Date(next.getFullYear(),next.getMonth(),next.getDate()-1),key:ymd(start),days:dayDiff(start,next)};
+}
+const fmtD=d=>d.toLocaleDateString("en-ZA",{day:"numeric",month:"short"});
+const fmtDY=d=>d.toLocaleDateString("en-ZA",{day:"numeric",month:"short",year:"numeric"});
+function money(n){const v=Math.abs(n||0).toLocaleString("en-ZA",{minimumFractionDigits:2,maximumFractionDigits:2});return (n<0?"−":"")+(S.settings.currency||"R")+" "+v}
+const num=v=>{const n=parseFloat(String(v??"").replace(/\s/g,"").replace(",","."));return isFinite(n)?Math.round(n*100)/100:NaN};
+function toast(msg){const b=$("#toastbox");b.innerHTML='<div class="toast" role="status">'+esc(msg)+'</div>';clearTimeout(toast.t);toast.t=setTimeout(()=>b.innerHTML="",2600)}
+const inPeriod=p=>S.expenses.filter(e=>{const d=parse(e.date);return d&&d>=p.start&&d<p.next});
+const sum=a=>Math.round(a.reduce((t,e)=>t+(+e.amount||0),0)*100)/100;
+const newId=()=>"s"+Date.now().toString(36)+Math.random().toString(36).slice(2,8);
+// Returns true when the Android app saved it (it shows its own "Saved" message)
+async function saveFile(name,blob){
+  if(window.AndroidBridge){
+    const b64=await blobToB64(blob);
+    window.AndroidBridge.saveFile(name,b64,blob.type||"application/octet-stream");
+    return true;
+  }
+  const url=URL.createObjectURL(blob),a=document.createElement("a");
+  a.href=url;a.download=name;document.body.appendChild(a);a.click();a.remove();
+  setTimeout(()=>URL.revokeObjectURL(url),60000);
+  return false;
+}
+// Android back button: close what's open, then go to the Budget tab, then leave the app
+window.slipwiseBack=function(){
+  if($("#viewer").innerHTML){const c=$("#vw-close");if(c)c.click();else $("#viewer").innerHTML="";return true}
+  if($("#modal").innerHTML){const c=$("#ed-cancel");if(c)c.click();else $("#modal").innerHTML="";return true}
+  if(S.tab!=="home"){S.tab="home";render();window.scrollTo(0,0);return true}
+  return false;
+};
+const CAMERA_ICON='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-label="Has photo"><path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/></svg>';
+
+/* ---------- storage: everything stays on this phone (IndexedDB) ---------- */
+let idb=null;
+function openDB(){return new Promise((res,rej)=>{
+  const r=indexedDB.open("slipwise",1);
+  r.onupgradeneeded=()=>{const d=r.result;d.createObjectStore("expenses",{keyPath:"id"});d.createObjectStore("photos");d.createObjectStore("kv")};
+  r.onsuccess=()=>res(r.result);r.onerror=()=>rej(r.error);
+})}
+function tx(store,mode,fn){return new Promise((res,rej)=>{
+  const t=idb.transaction(store,mode),s=t.objectStore(store);let out;
+  const r=fn(s);if(r)r.onsuccess=()=>{out=r.result};
+  t.oncomplete=()=>res(out);t.onerror=()=>rej(t.error);t.onabort=()=>rej(t.error);
+})}
+const dbAll=store=>tx(store,"readonly",s=>s.getAll());
+const dbGet=(store,key)=>tx(store,"readonly",s=>s.get(key));
+const dbPut=(store,val,key)=>tx(store,"readwrite",s=>key===undefined?s.put(val):s.put(val,key));
+const dbDel=(store,key)=>tx(store,"readwrite",s=>s.delete(key));
+async function putSettings(data){S.settings=Object.assign({},S.settings,data);await dbPut("kv",S.settings,"settings");render()}
+async function putExpense(row,photoBlob){
+  if(photoBlob){await dbPut("photos",photoBlob,row.id);row.hasPhoto=true}
+  await dbPut("expenses",row);
+  const i=S.expenses.findIndex(e=>e.id===row.id);if(i>=0)S.expenses[i]=row;else S.expenses.push(row);
+  askPersist();render();
+}
+async function removeExpense(id){await dbDel("expenses",id);await dbDel("photos",id);S.expenses=S.expenses.filter(e=>e.id!==id);render()}
+let persistAsked=false;
+function askPersist(){if(persistAsked||!navigator.storage||!navigator.storage.persist)return;persistAsked=true;navigator.storage.persist().catch(()=>{})}
+
+/* ---------- photos ---------- */
+async function prepPhoto(file){
+  // Shrink to max 1568px on the long side (what Claude reads best) and save as JPEG, ~200-400 KB
+  let bmp;
+  try{bmp=await createImageBitmap(file,{imageOrientation:"from-image"})}
+  catch(e){bmp=await new Promise((res,rej)=>{const i=new Image();i.onload=()=>res(i);i.onerror=rej;i.src=URL.createObjectURL(file)})}
+  const w=bmp.width,h=bmp.height,k=Math.min(1,1568/Math.max(w,h));
+  const c=document.createElement("canvas");c.width=Math.round(w*k);c.height=Math.round(h*k);
+  c.getContext("2d").drawImage(bmp,0,0,c.width,c.height);
+  return await new Promise(res=>c.toBlob(res,"image/jpeg",0.85));
+}
+const blobToB64=b=>new Promise((res,rej)=>{const r=new FileReader();r.onload=()=>res(String(r.result).split(",")[1]);r.onerror=rej;r.readAsDataURL(b)});
+const blobToDataURL=b=>new Promise((res,rej)=>{const r=new FileReader();r.onload=()=>res(r.result);r.onerror=rej;r.readAsDataURL(b)});
+function openViewer(blob,e){
+  const url=URL.createObjectURL(blob);
+  $("#viewer").innerHTML=`<div class="viewer" role="dialog" aria-label="Slip photo"><div class="img"><img src="${url}" alt="Slip photo"></div><div class="bar"><button class="btn" id="vw-save">Save to phone</button><button class="btn" id="vw-close">Close</button></div></div>`;
+  $("#vw-close").onclick=()=>{URL.revokeObjectURL(url);$("#viewer").innerHTML=""};
+  $("#vw-save").onclick=async()=>{if(!await saveFile(`slip-${e&&e.date||ymd(today())}-${(e&&e.merchant||"photo").replace(/[^\w-]+/g,"-").slice(0,30)}.jpg`,blob))toast("Photo saved to Downloads")};
+}
+
+/* ---------- Claude API ---------- */
+async function askClaude(content,maxTokens){
+  const s=S.settings;
+  let r;
+  try{
+    r=await fetch("https://api.anthropic.com/v1/messages",{method:"POST",headers:{
+      "x-api-key":s.apiKey.trim(),"anthropic-version":"2023-06-01","content-type":"application/json",
+      "anthropic-dangerous-direct-browser-access":"true"},
+      body:JSON.stringify({model:s.model||DEFAULTS.model,max_tokens:maxTokens,messages:[{role:"user",content}]})});
+  }catch(e){throw {code:"offline"}}
+  let body=null;try{body=await r.json()}catch(e){}
+  if(!r.ok){
+    const msg=(body&&body.error&&body.error.message)||"";
+    if(r.status===401) throw {code:"bad_key"};
+    if(/credit balance/i.test(msg)) throw {code:"no_credit"};
+    if(r.status===429) throw {code:"busy"};
+    if(r.status===529||r.status>=500) throw {code:"overloaded"};
+    if(r.status===404||/model/i.test(msg)) throw {code:"model"};
+    throw {code:"other",message:msg};
+  }
+  return (body.content||[]).filter(c=>c.type==="text").map(c=>c.text).join("");
+}
+const API_ERR={offline:"No internet connection. Enter the total by hand, or try again when you're online.",bad_key:"The Claude key isn't valid. Check it in Settings.",no_credit:"The Claude account has run out of credit. Top it up at console.anthropic.com.",busy:"Too many slips at once. Wait a minute and try again.",overloaded:"Claude is busy right now. Try again in a moment.",model:"The chosen Claude model isn't available. Pick the other one in Settings.",parse:"The slip was hard to read. Check the photo or enter the total by hand.",notslip:"That doesn't look like a slip, or the total wasn't clear. Enter it by hand."};
+function extractJSON(t){const a=t.indexOf("{"),b=t.lastIndexOf("}");if(a<0||b<a)throw {code:"parse"};try{return JSON.parse(t.slice(a,b+1))}catch(e){throw {code:"parse"}}}
+
+/* ---------- render ---------- */
+function render(){
+  document.querySelectorAll(".tab").forEach(t=>t.setAttribute("aria-current",t.dataset.tab===S.tab?"page":"false"));
+  const app=$("#app");
+  app.innerHTML=S.tab==="home"?homeView():S.tab==="sheet"?sheetView():settingsView();
+  bindView();
+}
+const dayOpts=sel=>{let o="";for(let i=1;i<=31;i++)o+=`<option value="${i}" ${+sel===i?"selected":""}>${i}${i>=29?" (or last day)":""}</option>`;return o};
+function homeView(){
+  const p=period(today());
+  let h=`<div class="top"><h1>Slipwise</h1><span class="label">${fmtD(p.start)} – ${fmtD(p.end)}</span></div>`;
+  if(!S.ready) return h+'<div class="empty"><strong>Opening your budget…</strong></div>';
+  const s=S.settings;
+  if(!s.limit){
+    return h+`<div class="slip"><span class="label">Set up</span><h2>Let's set your budget</h2>
+    <div class="field"><label for="su-limit">Monthly limit (${esc(s.currency)})</label><input id="su-limit" class="amtin" inputmode="decimal" placeholder="8 000"></div>
+    <div class="field"><label for="su-day">Month starts on day</label><select id="su-day">${dayOpts(s.resetDay)}</select><span class="hint">Payday is a good choice. The budget resets on this day each month.</span></div>
+    <div class="field"><label for="su-key">Claude key for reading slips</label><input id="su-key" type="password" autocomplete="off" placeholder="sk-ant-…" value="${esc(s.apiKey)}"><span class="hint">Paste the key you were given. Leave it empty to type amounts by hand.</span></div>
+    <button class="btn primary" id="su-save">Start budgeting</button></div>`;
+  }
+  const list=inPeriod(p).sort((a,b)=>b.date.localeCompare(a.date)||(b.createdAt||0)-(a.createdAt||0));
+  const lim=+s.limit,spent=sum(list),left=Math.round((lim-spent)*100)/100;
+  const daysLeft=dayDiff(today(),p.next),elapsed=dayDiff(p.start,today())+1;
+  const pct=Math.min(100,spent/lim*100),pacePct=Math.min(100,elapsed/p.days*100);
+  const status=left<0?'<span class="pill bad">Over budget</span>':pct>pacePct+8?'<span class="pill warn">Ahead of pace</span>':'<span class="pill good">On track</span>';
+  const canRead=!!s.apiKey.trim();
+  h+=`<div class="slip">
+    <div class="row"><span class="label">Left to spend</span>${status}</div>
+    <div class="big ${left<0?"neg":""}">${money(left)}</div>
+    <div class="meter"><i class="${left<0?"over":""}" style="width:${pct}%"></i><b style="left:calc(${pacePct}% - 1px)"></b></div>
+    <div class="row"><span class="muted">Spent</span><span>${money(spent)}</span></div>
+    <div class="row"><span class="muted">Monthly limit</span><span>${money(lim)}</span></div>
+    <div class="rule"></div>
+    <div class="row"><span class="muted">${daysLeft} day${daysLeft===1?"":"s"} until reset (${fmtD(p.next)})</span><span>${left>0?money(left/daysLeft)+"/day":"—"}</span></div>
+  </div>
+  <div class="actions">
+    <button class="btn primary wide" id="scan"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8V6a2 2 0 0 1 2-2h2M16 4h2a2 2 0 0 1 2 2v2M20 16v2a2 2 0 0 1-2 2h-2M8 20H6a2 2 0 0 1-2-2v-2"/><circle cx="12" cy="12" r="3.5"/></svg>Snap a slip</button>
+    <button class="btn" id="pick">Choose photo</button>
+    <button class="btn" id="manual">Add manually</button>
+  </div>`;
+  if(!canRead) h+='<div class="banner warn">No Claude key yet, so photos are saved but you type the total yourself. Add a key in Settings.</div>';
+  h+=`<div class="top"><h2>This month's slips</h2><span class="label">${list.length} slip${list.length===1?"":"s"}</span></div>`;
+  h+=list.length?'<div class="list">'+list.map(itemRow).join("")+'</div>'
+    :'<div class="empty"><strong>No slips yet this month</strong>Snap a till slip after you pay. The total comes off your budget and the photo is kept.</div>';
+  return h;
+}
+const itemRow=e=>`<button class="item" data-edit="${esc(e.id)}"><span class="m">${esc(e.merchant||"Unnamed")}</span><span class="a">${money(-e.amount)}</span><span class="s">${fmtD(parse(e.date))} · ${esc(e.category||"Other")}${e.hasPhoto?" · "+CAMERA_ICON:""}</span></button>`;
+function periodKeys(){
+  const set=new Set([period(today()).key]);
+  S.expenses.forEach(e=>{const d=parse(e.date);if(d)set.add(period(d).key)});
+  return [...set].sort().reverse();
+}
+function sheetView(){
+  const keys=periodKeys();
+  if(!S.sheetKey||!keys.includes(S.sheetKey))S.sheetKey=keys[0];
+  const p=period(parse(S.sheetKey)),list=inPeriod(p).sort((a,b)=>a.date.localeCompare(b.date)||(a.createdAt||0)-(b.createdAt||0));
+  const lim=+S.settings.limit||0,spent=sum(list),left=lim-spent;
+  const t=today(),isCurrent=t>=p.start&&t<p.next,daysRun=isCurrent?dayDiff(p.start,t)+1:p.days;
+  const cats={};list.forEach(e=>{const c=e.category||"Other";cats[c]=(cats[c]||0)+(+e.amount||0)});
+  const catRows=Object.entries(cats).sort((a,b)=>b[1]-a[1]),maxCat=catRows.length?catRows[0][1]:1;
+  let h=`<div class="top"><h1>Monthly sheet</h1></div>
+  <div class="field"><label for="sheet-period">Budget month</label><select id="sheet-period">${keys.map(k=>{const q=period(parse(k));return `<option value="${k}" ${k===S.sheetKey?"selected":""}>${fmtDY(q.start)} – ${fmtDY(q.end)}${k===period(t).key?" (current)":""}</option>`}).join("")}</select></div>
+  <div class="card"><div class="stats">
+    <div><span class="label">Limit</span><span class="v">${money(lim)}</span></div>
+    <div><span class="label">Spent</span><span class="v">${money(spent)}</span></div>
+    <div><span class="label">${left<0?"Over by":"Remaining"}</span><span class="v" style="color:var(${left<0?"--bad":"--good"})">${money(Math.abs(left))}</span></div>
+    <div><span class="label">Avg per day</span><span class="v">${money(daysRun?spent/daysRun:0)}</span></div>
+    <div><span class="label">Slips</span><span class="v">${list.length}</span></div>
+    <div><span class="label">Biggest slip</span><span class="v">${list.length?money(Math.max(...list.map(e=>+e.amount||0))):"—"}</span></div>
+  </div></div>
+  <div class="card"><h2>Spending through the month</h2>${paceChart(p,list,lim,isCurrent?t:p.end)}<div class="legend"><span>Spent so far</span><span class="p">Even pace to limit</span></div></div>
+  <div class="card"><h2>By category</h2>${catRows.length?catRows.map(([c,v])=>`<div class="cat"><span>${esc(c)}</span><span class="mono">${money(v)} · ${spent?Math.round(v/spent*100):0}%</span><div class="bar"><i style="width:${v/maxCat*100}%"></i></div></div>`).join(""):'<span class="muted">No spending recorded in this month.</span>'}</div>
+  <div class="top"><h2>All slips</h2><button class="btn small" id="export" ${list.length?"":"disabled"}>Download sheet (CSV)</button></div>`;
+  if(list.length) h+=`<div class="tablewrap"><table><thead><tr><th>Date</th><th>Shop</th><th>Category</th><th class="n">Amount</th></tr></thead><tbody>${list.map(e=>`<tr data-edit="${esc(e.id)}"><td>${fmtD(parse(e.date))}</td><td>${esc(e.merchant||"")}</td><td>${esc(e.category||"Other")}</td><td class="n">${money(e.amount)}</td></tr>`).join("")}</tbody><tfoot><tr><td colspan="3">Total</td><td class="n">${money(spent)}</td></tr></tfoot></table></div>`;
+  else h+='<div class="empty"><strong>Nothing here yet</strong>Slips you add show up in this sheet, grouped by budget month.</div>';
+  return h;
+}
+function paceChart(p,list,lim,until){
+  const W=320,H=150,L=44,R=10,T=12,B=22,iw=W-L-R,ih=H-T-B;
+  const byDay=new Array(p.days).fill(0);
+  list.forEach(e=>{const i=dayDiff(p.start,parse(e.date));if(i>=0&&i<p.days)byDay[i]+=+e.amount||0});
+  const lastI=Math.min(p.days-1,dayDiff(p.start,until));
+  let c=0;const cum=byDay.map(v=>c+=v);
+  const top=Math.max(lim,cum[lastI]||0,1)*1.08;
+  const x=i=>L+(p.days>1?i/(p.days-1):0)*iw,y=v=>T+ih-(v/top)*ih;
+  const pts=[];for(let i=0;i<=lastI;i++)pts.push(x(i).toFixed(1)+","+y(cum[i]).toFixed(1));
+  const k=v=>{const s=S.settings.currency||"R";return v>=1000?s+(v/1000).toFixed(v>=10000?0:1)+"k":s+Math.round(v)};
+  let g="";[0,.5,1].forEach(f=>{if(!lim&&f)return;const v=lim*f;g+=`<line class="grid" x1="${L}" x2="${W-R}" y1="${y(v)}" y2="${y(v)}"/><text x="${L-6}" y="${y(v)+3}" text-anchor="end">${k(v)}</text>`});
+  return `<svg class="chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="Spending so far compared with an even pace to the limit">${g}
+    ${lim?`<line class="lim" x1="${L}" x2="${W-R}" y1="${y(lim)}" y2="${y(lim)}"/><line class="pace" x1="${x(0)}" y1="${y(0)}" x2="${x(p.days-1)}" y2="${y(lim)}"/>`:""}
+    ${pts.length?`<polygon class="area" points="${x(0)},${y(0)} ${pts.join(" ")} ${x(lastI)},${y(0)}"/><polyline class="spent" points="${pts.join(" ")}"/><circle class="dot" cx="${x(lastI)}" cy="${y(cum[lastI])}" r="3.5"/>`:""}
+    <text x="${L}" y="${H-6}">${fmtD(p.start)}</text><text x="${W-R}" y="${H-6}" text-anchor="end">${fmtD(p.end)}</text></svg>`;
+}
+function settingsView(){
+  const s=S.settings;
+  return `<div class="top"><h1>Settings</h1></div>
+  <div class="card"><h2>Budget</h2>
+    <div class="field"><label for="st-limit">Monthly limit</label><input id="st-limit" class="amtin" inputmode="decimal" value="${s.limit?esc(String(s.limit).replace(".",",")):""}" placeholder="8 000"></div>
+    <div class="field"><label for="st-day">Month starts on day</label><select id="st-day">${dayOpts(s.resetDay)}</select><span class="hint">The budget resets and a new monthly sheet starts on this day. In short months, days 29–31 fall on the last day.</span></div>
+    <div class="field"><label for="st-cur">Currency symbol</label><input id="st-cur" value="${esc(s.currency||"R")}" maxlength="4"></div>
+  </div>
+  <div class="card"><h2>Slip reading</h2>
+    <div class="field"><label for="st-key">Claude key</label><input id="st-key" type="password" autocomplete="off" placeholder="sk-ant-…" value="${esc(s.apiKey)}"><span class="hint">Made at <a href="https://console.anthropic.com/settings/keys" target="_blank" rel="noopener">console.anthropic.com</a>. It is stored only on this phone.</span></div>
+    <div class="field"><label for="st-model">Reader</label><select id="st-model">${Object.entries(MODELS).map(([k,v])=>`<option value="${k}" ${k===s.model?"selected":""}>${esc(v)}</option>`).join("")}</select></div>
+    <button class="btn" id="st-test">Test the key</button>
+    <div id="st-test-out" class="hint" role="status"></div>
+  </div>
+  <button class="btn primary" id="st-save">Save settings</button>
+  <div class="card"><h2>Backup</h2>
+    <p class="hint">Slips and photos are kept only on this phone. Make a backup now and then, and keep the file somewhere safe (Google Drive, WhatsApp to yourself). The Claude key is not included.</p>
+    <div class="actions"><button class="btn" id="bk-save">Back up</button><button class="btn" id="bk-restore">Restore</button></div>
+    <div id="bk-confirm"></div>
+    <p class="hint" id="storage-note">${esc(S.storageNote)}</p>
+  </div>`;
+}
+
+/* ---------- events ---------- */
+function bindView(){
+  const on=(id,ev,fn)=>{const el=document.getElementById(id);if(el)el.addEventListener(ev,fn)};
+  on("su-save","click",async()=>{
+    const lim=num($("#su-limit").value);if(!(lim>0)){toast("Enter a limit above zero");return}
+    await putSettings({limit:lim,resetDay:+$("#su-day").value,apiKey:$("#su-key").value.trim()});toast("Budget set");
+  });
+  on("st-save","click",async()=>{
+    const lim=num($("#st-limit").value);if(!(lim>0)){toast("Enter a limit above zero");return}
+    await putSettings({limit:lim,resetDay:+$("#st-day").value,currency:($("#st-cur").value.trim()||"R").slice(0,4),apiKey:$("#st-key").value.trim(),model:$("#st-model").value});
+    toast("Settings saved");
+  });
+  on("st-test","click",async()=>{
+    const out=$("#st-test-out"),btn=$("#st-test");
+    const key=$("#st-key").value.trim();if(!key){out.textContent="Paste a key first.";return}
+    const keep={apiKey:S.settings.apiKey,model:S.settings.model};
+    S.settings.apiKey=key;S.settings.model=$("#st-model").value;
+    btn.disabled=true;out.textContent="Checking…";
+    try{await askClaude("Reply with the word OK.",5);out.textContent="The key works. Tap Save settings to keep it."}
+    catch(e){out.textContent=API_ERR[e.code]||("Claude said: "+(e.message||"unknown error"))}
+    finally{Object.assign(S.settings,keep);btn.disabled=false}
+  });
+  on("scan","click",()=>$("#cam").click());
+  on("pick","click",()=>$("#gallery").click());
+  on("manual","click",()=>openEditor(null,null));
+  on("sheet-period","change",e=>{S.sheetKey=e.target.value;render()});
+  on("export","click",exportCsv);
+  on("bk-save","click",backup);
+  on("bk-restore","click",()=>$("#restore-file").click());
+  document.querySelectorAll("[data-edit]").forEach(b=>b.addEventListener("click",()=>{const e=S.expenses.find(x=>x.id===b.dataset.edit);if(e)openEditor(e,null)}));
+  if(S.tab==="settings") storageNote();
+}
+document.querySelectorAll(".tab").forEach(t=>t.addEventListener("click",()=>{S.tab=t.dataset.tab;render();window.scrollTo(0,0)}));
+["cam","gallery"].forEach(id=>$("#"+id).addEventListener("change",e=>{const f=e.target.files&&e.target.files[0];e.target.value="";if(f)openEditor(null,f)}));
+$("#restore-file").addEventListener("change",e=>{const f=e.target.files&&e.target.files[0];e.target.value="";if(f)confirmRestore(f)});
+
+/* ---------- editor ---------- */
+let readCtl=null;
+async function openEditor(exp,file){
+  const isNew=!exp,d=exp||{merchant:"",amount:"",date:ymd(today()),category:"Groceries",items:[]};
+  const hasKey=!!S.settings.apiKey.trim();
+  $("#modal").innerHTML=`<div class="overlay" id="ov"><div class="sheet" role="dialog" aria-modal="true" aria-label="${isNew?"Add slip":"Edit slip"}">
+    <div class="grab"></div>
+    <h2>${isNew?(file?"Check the slip":"Add a purchase"):"Edit slip"}</h2>
+    <div id="ed-photo"></div>
+    <div id="ed-status" class="status" ${file?"":"hidden"}><span class="spin"></span><span>${file&&hasKey?"Reading the slip…":"Preparing photo…"}</span></div>
+    <div class="field"><label for="ed-amount">Total paid</label><input id="ed-amount" class="amtin" inputmode="decimal" value="${d.amount!==""?esc(String(d.amount).replace(".",",")):""}" placeholder="0,00"></div>
+    <div class="field"><label for="ed-merchant">Shop</label><input id="ed-merchant" value="${esc(d.merchant)}" placeholder="e.g. Checkers"></div>
+    <div class="two">
+      <div class="field"><label for="ed-date">Date</label><input id="ed-date" type="date" value="${esc(d.date)}"></div>
+      <div class="field"><label for="ed-cat">Category</label><select id="ed-cat">${CATS.map(c=>`<option ${c===d.category?"selected":""}>${esc(c)}</option>`).join("")}</select></div>
+    </div>
+    <div id="ed-items">${itemsHtml(d.items)}</div>
+    <div class="actions">
+      <button class="btn" id="ed-cancel">Cancel</button>
+      <button class="btn primary" id="ed-save">${isNew?"Deduct from budget":"Save changes"}</button>
+      ${isNew?"":`<button class="btn danger wide" id="ed-del">Delete slip</button>`}
+    </div></div></div>`;
+  let items=d.items||[],photo=null,thumbUrl=null;
+  const showPhoto=blob=>{thumbUrl=URL.createObjectURL(blob);$("#ed-photo").innerHTML=`<button class="thumbbtn" id="ed-thumb" aria-label="View photo full size"><img class="thumb" src="${thumbUrl}" alt="Slip photo"></button>`;$("#ed-thumb").onclick=()=>openViewer(blob,exp||{date:$("#ed-date").value,merchant:$("#ed-merchant").value})};
+  const close=()=>{if(readCtl){readCtl.abort();readCtl=null}if(thumbUrl)URL.revokeObjectURL(thumbUrl);$("#modal").innerHTML=""};
+  $("#ov").addEventListener("click",e=>{if(e.target.id==="ov")close()});
+  $("#ed-cancel").addEventListener("click",close);
+  const del=$("#ed-del");
+  if(del){let armed=false;del.addEventListener("click",async()=>{
+    if(!armed){armed=true;del.textContent="Tap again to delete slip and photo";return}
+    del.disabled=true;try{await removeExpense(exp.id);close();toast("Slip deleted")}catch(e){del.disabled=false;toast("Couldn't delete. Try again.")}
+  })}
+  $("#ed-save").addEventListener("click",async()=>{
+    const amount=num($("#ed-amount").value),date=$("#ed-date").value;
+    if(!(amount>0)){toast("Enter the total paid");$("#ed-amount").focus();return}
+    if(!parse(date)){toast("Pick a date");return}
+    if(file&&!photo){toast("Still preparing the photo…");return}
+    const row={id:exp?exp.id:newId(),merchant:$("#ed-merchant").value.trim().slice(0,80),amount,date,category:$("#ed-cat").value,items:items.slice(0,40),createdAt:exp?.createdAt||Date.now(),hasPhoto:!!(exp&&exp.hasPhoto)};
+    const btn=$("#ed-save");btn.disabled=true;
+    try{await putExpense(row,photo);close();toast(isNew?money(amount)+" deducted":"Slip updated")}
+    catch(e){btn.disabled=false;toast(e&&e.name==="QuotaExceededError"?"Phone storage is full. Free up space, then try again.":"Couldn't save. Try again.")}
+  });
+  if(exp&&exp.hasPhoto){const b=await dbGet("photos",exp.id).catch(()=>null);if(b&&$("#ed-photo"))showPhoto(b)}
+  if(file){
+    const st=$("#ed-status");
+    try{photo=await prepPhoto(file)}catch(e){st.className="status err";st.textContent="That photo couldn't be opened. Try another one.";return}
+    if(!$("#ed-photo"))return;
+    showPhoto(photo);
+    if(!hasKey){st.className="status";st.textContent="Photo saved with the slip. Type the total below.";return}
+    readSlip(photo,it=>{items=it});
+  }
+}
+function itemsHtml(items){
+  if(!items||!items.length)return "";
+  return `<details><summary>${items.length} line item${items.length===1?"":"s"} read from the slip</summary><ul>${items.map(i=>`<li><span>${esc(i.name)}</span><span>${money(+i.amount||0)}</span></li>`).join("")}</ul></details>`;
+}
+async function readSlip(photo,setItems){
+  const st=$("#ed-status");
+  const ctl={aborted:false,abort(){this.aborted=true}};readCtl=ctl;
+  const prompt=`This photo shows a shop till slip / receipt (most likely South African, amounts in Rand). Today is ${ymd(today())}.
+Extract the purchase. Reply with only a JSON object in this shape:
+{"merchant": "store name", "date": "YYYY-MM-DD or null", "total": 123.45, "category": "one of: ${CATS.join(" | ")}", "items": [{"name": "item", "amount": 12.99}]}
+Rules: "total" is the final amount actually paid (the TOTAL / AMOUNT DUE line, including VAT, after discounts and savings; ignore change, cash tendered and VAT breakdown lines). Use a number with a dot for decimals. List up to 30 items. If the year is missing, pick the most recent date that is not after today. If the image is not a receipt, reply {"error": "not a receipt"}.`;
+  try{
+    const b64=await blobToB64(photo);
+    const text=await askClaude([{type:"image",source:{type:"base64",media_type:"image/jpeg",data:b64}},{type:"text",text:prompt}],1500);
+    if(ctl.aborted||!document.getElementById("ed-status"))return;
+    const r=extractJSON(text);
+    if(!r||r.error||!(num(r.total)>0))throw {code:"notslip"};
+    const amt=$("#ed-amount");if(!amt.value)amt.value=String(num(r.total)).replace(".",",");
+    if(r.merchant&&!$("#ed-merchant").value)$("#ed-merchant").value=String(r.merchant).slice(0,80);
+    const d=parse(r.date);if(d&&d<=today()&&dayDiff(d,today())<400)$("#ed-date").value=ymd(d);
+    if(CATS.includes(r.category))$("#ed-cat").value=r.category;
+    const it=Array.isArray(r.items)?r.items.filter(i=>i&&i.name).map(i=>({name:String(i.name).slice(0,60),amount:num(i.amount)||0})).slice(0,30):[];
+    setItems(it);$("#ed-items").innerHTML=itemsHtml(it);
+    st.className="status";st.textContent="Read by Claude. Check the total, then tap Deduct.";
+  }catch(e){
+    if(ctl.aborted||!document.getElementById("ed-status"))return;
+    st.className="status err";st.textContent=API_ERR[e.code]||("Couldn't read the slip: "+(e.message||"unknown error")+". Enter the total by hand.");
+  }finally{if(readCtl===ctl)readCtl=null}
+}
+
+/* ---------- export, backup, restore ---------- */
+async function exportCsv(){
+  const p=period(parse(S.sheetKey)),list=inPeriod(p).sort((a,b)=>a.date.localeCompare(b.date));
+  const q=v=>'"'+String(v??"").replace(/"/g,'""')+'"',lim=+S.settings.limit||0,spent=sum(list);
+  const rows=[["Budget month",`${ymd(p.start)} to ${ymd(p.end)}`],[],["Date","Shop","Category","Amount"]];
+  list.forEach(e=>rows.push([e.date,e.merchant,e.category,(+e.amount).toFixed(2)]));
+  rows.push([],["Summary"],["Monthly limit",lim.toFixed(2)],["Total spent",spent.toFixed(2)],["Remaining",(lim-spent).toFixed(2)],[],["Category","Amount"]);
+  const cats={};list.forEach(e=>{cats[e.category||"Other"]=(cats[e.category||"Other"]||0)+(+e.amount||0)});
+  Object.entries(cats).sort((a,b)=>b[1]-a[1]).forEach(([c,v])=>rows.push([c,v.toFixed(2)]));
+  if(!await saveFile(`slipwise-${ymd(p.start)}-to-${ymd(p.end)}.csv`,new Blob(["﻿"+rows.map(r=>r.map(q).join(",")).join("\r\n")],{type:"text/csv"})))
+    toast("Sheet saved to Downloads");
+}
+async function backup(){
+  const btn=$("#bk-save");btn.disabled=true;btn.textContent="Packing…";
+  try{
+    const photos={};
+    for(const e of S.expenses){if(e.hasPhoto){const b=await dbGet("photos",e.id);if(b)photos[e.id]=await blobToDataURL(b)}}
+    const s=Object.assign({},S.settings);delete s.apiKey;
+    const data={app:"slipwise",version:1,made:new Date().toISOString(),settings:s,expenses:S.expenses,photos};
+    if(!await saveFile(`slipwise-backup-${ymd(today())}.json`,new Blob([JSON.stringify(data)],{type:"application/json"})))
+      toast("Backup saved to Downloads");
+  }catch(e){toast("Couldn't make the backup. Try again.")}
+  finally{btn.disabled=false;btn.textContent="Back up"}
+}
+async function confirmRestore(file){
+  let data;
+  try{data=JSON.parse(await file.text());if(data.app!=="slipwise"||!Array.isArray(data.expenses))throw 0}
+  catch(e){toast("That file isn't a Slipwise backup.");return}
+  const box=$("#bk-confirm");if(!box)return;
+  box.innerHTML=`<div class="banner">Restore ${data.expenses.length} slips from ${esc((data.made||"").slice(0,10))}? Slips already on this phone stay; matching ones are replaced. <div class="actions" style="margin-top:10px"><button class="btn small" id="rs-no">Cancel</button><button class="btn small primary" id="rs-yes">Restore</button></div></div>`;
+  $("#rs-no").onclick=()=>box.innerHTML="";
+  $("#rs-yes").onclick=async()=>{
+    $("#rs-yes").disabled=true;
+    try{
+      for(const e of data.expenses){
+        if(!e||!e.id||!parse(e.date))continue;
+        const url=data.photos&&data.photos[e.id];
+        if(url){const b=await (await fetch(url)).blob();await dbPut("photos",b,e.id);e.hasPhoto=true}
+        await dbPut("expenses",e);
+      }
+      if(data.settings){const keep=S.settings.apiKey;S.settings=Object.assign({},DEFAULTS,data.settings,{apiKey:keep});await dbPut("kv",S.settings,"settings")}
+      S.expenses=await dbAll("expenses");render();toast("Backup restored");
+    }catch(e){toast("Restore stopped part-way. Try again.")}
+  };
+}
+async function storageNote(){
+  const n=S.expenses.filter(e=>e.hasPhoto).length;let t=`${S.expenses.length} slips, ${n} photos saved on this phone.`;
+  try{const est=await navigator.storage.estimate();if(est&&est.usage)t+=` Using about ${(est.usage/1048576).toFixed(1)} MB.`}catch(e){}
+  S.storageNote=t;const el=$("#storage-note");if(el)el.textContent=t;
+}
+
+/* ---------- boot ---------- */
+render();
+(async()=>{
+  try{
+    idb=await openDB();
+    const s=await dbGet("kv","settings");if(s)S.settings=Object.assign({},DEFAULTS,s);
+    S.expenses=await dbAll("expenses");
+  }catch(e){toast("This browser can't store data. Open the app in Chrome.")}
+  S.ready=true;render();
+})();
+if(!window.AndroidBridge&&"serviceWorker" in navigator&&location.protocol==="https:")navigator.serviceWorker.register("sw.js").catch(()=>{});
+})();
+</script>
+</body>
+</html>
