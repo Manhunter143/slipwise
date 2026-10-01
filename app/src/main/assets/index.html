@@ -16,7 +16,7 @@
 :root{
   --bg:#EDF0EE; --paper:#FFFFFF; --ink:#1B2420; --muted:#5E6B66; --line:#D5DCD8;
   --accent:#2446C9; --accent-ink:#FFFFFF; --hi:#F2E24A;
-  --pot-g:#2446C9; --pot-b:#B0417A; --pot-x:#8A6400;
+  --pot-g:#2446C9; --pot-b:#B0417A; --pot-h:#1E7A5A; --pot-x:#8A6400;
   --good:#1E7F4F; --warn:#A86400; --bad:#C0362C; --shade:rgba(20,28,25,.5);
   --f-display:"Bricolage Grotesque",ui-sans-serif,system-ui,sans-serif;
   --f-body:"Figtree",ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
@@ -26,7 +26,7 @@
 @media (prefers-color-scheme: dark){:root{
   --bg:#111614; --paper:#1A211E; --ink:#E8EEEB; --muted:#93A19B; --line:#2C3531;
   --accent:#8FA6FF; --accent-ink:#0C1330; --hi:#D9C93A;
-  --pot-g:#8FA6FF; --pot-b:#F08DBE; --pot-x:#E0B94A;
+  --pot-g:#8FA6FF; --pot-b:#F08DBE; --pot-h:#5FD3A8; --pot-x:#E0B94A;
   --good:#4CC38A; --warn:#E3A33B; --bad:#F07166; --shade:rgba(0,0,0,.65); color-scheme:dark}}
 *{box-sizing:border-box}
 html,body{background:var(--bg);color:var(--ink);margin:0}
@@ -46,7 +46,7 @@ p{margin:0}
 .banner{font-size:13px;padding:10px 12px;border:1px dashed var(--line);border-radius:8px;color:var(--muted)}
 .banner.warn{border-color:var(--warn);color:var(--warn)}
 .dot{display:inline-block;width:9px;height:9px;border-radius:50%;flex:none}
-.dot.groceries{background:var(--pot-g)} .dot.baby{background:var(--pot-b)} .dot.extras{background:var(--pot-x)}
+.dot.groceries{background:var(--pot-g)} .dot.baby{background:var(--pot-b)} .dot.extras{background:var(--pot-x)} .dot.huis{background:var(--pot-h)}
 .potname{display:flex;align-items:center;gap:7px}
 .monthnav{display:flex;align-items:center;gap:4px}
 .monthnav .label{min-width:9.5em;text-align:center;font-size:12px;color:var(--ink)}
@@ -77,6 +77,9 @@ p{margin:0}
 .mini{background:var(--paper);border-radius:10px;padding:14px;display:flex;flex-direction:column;gap:8px;min-width:0}
 .mini.baby{border-top:3px solid var(--pot-b)}
 .mini.extras{border-top:3px solid var(--pot-x)}
+.mini.huis{border-top:3px solid var(--pot-h)}
+.meter.huis i{background:var(--pot-h)}
+.pair .mini.extras{grid-column:1/-1}
 .mini .amt{font-family:var(--f-mono);font-weight:600;font-size:20px;font-variant-numeric:tabular-nums;overflow-wrap:anywhere;line-height:1.15}
 .mini .sub{font-size:12px;color:var(--muted)}
 
@@ -91,6 +94,7 @@ p{margin:0}
 .btn svg{width:20px;height:20px}
 .btn:focus-visible,input:focus-visible,select:focus-visible,.tab:focus-visible,.item:focus-visible,.seg button:focus-visible,.chips button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 .seg{display:grid;grid-template-columns:repeat(3,1fr);gap:6px}
+.seg.pots{grid-template-columns:1fr 1fr}
 .seg button{appearance:none;border:1px solid var(--line);background:var(--bg);color:var(--ink);font:600 13px var(--f-body);padding:10px 6px;border-radius:8px;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:4px;line-height:1.2}
 .seg button[aria-pressed="true"]{background:var(--paper);border-color:var(--ink);box-shadow:inset 0 0 0 1px var(--ink)}
 .seg.two{grid-template-columns:1fr 1fr}
@@ -204,12 +208,13 @@ nav.tabs .in{display:grid;grid-template-columns:repeat(3,1fr);width:100%;max-wid
 const POTS={
   groceries:{name:"Groceries",short:"Groceries"},
   baby:{name:"Baby Fund",short:"Baby Fund"},
+  huis:{name:"Huis Kaffee",short:"Huis Kaffee"},
   extras:{name:"End of month payments",short:"Month-end"}
 };
-const POT_IDS=["groceries","baby","extras"];
+const POT_IDS=["groceries","baby","huis","extras"];
 const MONTHS=["January","February","March","April","May","June","July","August","September","October","November","December"];
 const MODELS={"claude-sonnet-5-5":"Claude Sonnet 5.5 (recommended, most accurate, about R0.15–0.25 a slip)","claude-haiku-4-5-20251001":"Claude Haiku 4.5 (cheaper, less accurate, about R0.07 a slip)"};
-const DEFAULTS={groceriesLimit:0,babyLimit:0,babyMode:"monthly",babyFundStart:"",currency:"R",apiKey:"",model:"claude-sonnet-5-5",readerV2:true};
+const DEFAULTS={groceriesLimit:0,babyLimit:0,huisLimit:0,babyMode:"monthly",babyFundStart:"",currency:"R",apiKey:"",model:"claude-sonnet-5-5",readerV2:true};
 const S={settings:Object.assign({},DEFAULTS),expenses:[],tab:"home",homeKey:null,filter:"all",sheetView:"month",sheetKey:null,sheetYear:null,ready:false,storageNote:""};
 
 /* ---------- helpers ---------- */
@@ -369,6 +374,7 @@ function homeView(){
     return h+`<div class="slip"><span class="label">Set up</span><h2>Let's set your budgets</h2>
     <div class="field"><label for="su-g">Groceries limit per month</label><input id="su-g" class="amtin" inputmode="decimal" placeholder="6 000"></div>
     <div class="field"><label for="su-b">Baby Fund limit per month</label><input id="su-b" class="amtin" inputmode="decimal" placeholder="1 500"><span class="hint">You can switch Baby Fund to one running total later in Settings.</span></div>
+    <div class="field"><label for="su-h">Huis Kaffee limit per month</label><input id="su-h" class="amtin" inputmode="decimal" placeholder="2 000"></div>
     <div class="field"><label for="su-key">Claude key for reading slips</label><input id="su-key" type="password" autocomplete="off" placeholder="sk-ant-…" value="${esc(s.apiKey)}"><span class="hint">Leave it empty to type amounts by hand.</span></div>
     <p class="hint">Each slip goes into the month you choose (January, February…). End of month payments need no limit. They are added up separately and never come off Groceries or Baby Fund.</p>
     <button class="btn primary" id="su-save">Start budgeting</button></div>`;
@@ -396,8 +402,14 @@ function homeView(){
       <div class="sub">${fundMode()?`left in fund of ${money(bl)} · ${money(bMonth)} in ${MONTHS[p.start.getMonth()]}`:`left of ${money(bl)} in ${MONTHS[p.start.getMonth()]}`}</div>`
     :`<div class="amt">${money(bMonth)}</div><div class="sub">spent in ${MONTHS[p.start.getMonth()]} · no limit set</div>`;
   const xs=potSum(list,"extras"),xn=list.filter(e=>potOf(e)==="extras").length;
+  const hl=+s.huisLimit||0,hs=potSum(list,"huis"),hleft=Math.round((hl-hs)*100)/100,hpct=hl>0?Math.min(100,hs/hl*100):0;
+  const huis=hl>0?`<div class="amt ${hleft<0?"neg":""}">${money(hleft)}</div>
+      <div class="meter huis"><i class="${hleft<0?"over":""}" style="width:${hpct}%"></i></div>
+      <div class="sub">left of ${money(hl)} in ${MONTHS[p.start.getMonth()]}</div>`
+    :`<div class="amt">${money(hs)}</div><div class="sub">spent in ${MONTHS[p.start.getMonth()]} · set a limit in Settings</div>`;
   h+=`<div class="pair">
     <div class="mini baby"><span class="label potname"><span class="dot baby"></span>Baby Fund</span>${baby}</div>
+    <div class="mini huis"><span class="label potname"><span class="dot huis"></span>Huis Kaffee</span>${huis}</div>
     <div class="mini extras"><span class="label potname"><span class="dot extras"></span>Month-end</span>
       <div class="amt">${money(xs)}</div><div class="sub">extras from salary in ${MONTHS[p.start.getMonth()]} · ${xn} payment${xn===1?"":"s"} · not deducted anywhere</div></div>
   </div>`;
@@ -434,7 +446,7 @@ function monthView(){
   if(!S.sheetKey||!keys.includes(S.sheetKey))S.sheetKey=keys[0];
   const p=periodOfKey(S.sheetKey),list=inPeriod(p).sort((a,b)=>a.date.localeCompare(b.date)||(a.createdAt||0)-(b.createdAt||0));
   const s=S.settings,t=today(),isCurrent=p.key===curKey();
-  const gl=+s.groceriesLimit||0,gs=potSum(list,"groceries"),bl=+s.babyLimit||0,bs=potSum(list,"baby"),xs=potSum(list,"extras");
+  const gl=+s.groceriesLimit||0,gs=potSum(list,"groceries"),bl=+s.babyLimit||0,bs=potSum(list,"baby"),xs=potSum(list,"extras"),hl=+s.huisLimit||0,hs=potSum(list,"huis"),hcount=list.filter(e=>potOf(e)==="huis").length;
   const gcount=list.filter(e=>potOf(e)==="groceries").length,bcount=list.filter(e=>potOf(e)==="baby").length,xcount=list.filter(e=>potOf(e)==="extras").length;
   const leftRow=(lim,sp)=>lim>0?`<div class="row"><span class="muted">${sp>lim?"Over by":"Left"}</span><span class="${sp>lim?"neg":""}">${money(Math.abs(lim-sp))}</span></div>`:"";
   let h=`<div class="field"><label for="sheet-period">Month</label><select id="sheet-period">${keys.map(k=>`<option value="${k}" ${k===S.sheetKey?"selected":""}>${monthName(periodOfKey(k))}${k===curKey()?" (current)":""}</option>`).join("")}</select></div>
@@ -446,10 +458,13 @@ function monthView(){
       <div class="row"><span class="muted">Spent (${bcount} slip${bcount===1?"":"s"})</span><span>${money(bs)}</span></div>
       ${fundMode()?(bl>0?`<div class="row"><span class="muted">Left in fund (today)</span><span class="${babyFundSpent()>bl?"neg":""}">${money(bl-babyFundSpent())}</span></div>`:"")
         :(bl>0?`<div class="row"><span class="muted">Limit</span><span>${money(bl)}</span></div>${leftRow(bl,bs)}`:"")}</div>
+    <div class="potsum"><h3 class="potname"><span class="dot huis"></span>Huis Kaffee</h3>
+      <div class="row"><span class="muted">Spent (${hcount} slip${hcount===1?"":"s"})</span><span>${money(hs)}</span></div>
+      ${hl>0?`<div class="row"><span class="muted">Limit</span><span>${money(hl)}</span></div>${leftRow(hl,hs)}`:""}</div>
     <div class="potsum"><h3 class="potname"><span class="dot extras"></span>End of month payments</h3>
       <div class="row"><span class="muted">Total extras (${xcount} payment${xcount===1?"":"s"})</span><span>${money(xs)}</span></div>
       <p class="hint">Not budgeted. Paid from salary, not deducted from any pot.</p></div>
-    <div class="potsum"><div class="row" style="font-size:14px"><strong>Everything this month</strong><span><strong>${money(gs+bs+xs)}</strong></span></div></div>
+    <div class="potsum"><div class="row" style="font-size:14px"><strong>Everything this month</strong><span><strong>${money(gs+bs+hs+xs)}</strong></span></div></div>
   </div>
   <div class="card"><h2>Groceries through the month</h2>${paceChart(p,list.filter(e=>potOf(e)==="groceries"),gl,isCurrent?t:p.end)}<div class="legend"><span>Spent so far</span><span class="p">Even pace to limit</span></div></div>
   <div class="top"><h2>All slips</h2><button class="btn small" id="export" ${list.length?"":"disabled"}>Download sheet (CSV)</button></div>
@@ -461,7 +476,7 @@ function monthView(){
 function yearRows(y){
   return MONTHS.map((name,m)=>{
     const p=periodForMonth(y,m),list=inPeriod(p);
-    return {name,p,g:potSum(list,"groceries"),b:potSum(list,"baby"),x:potSum(list,"extras")};
+    return {name,p,g:potSum(list,"groceries"),b:potSum(list,"baby"),h:potSum(list,"huis"),x:potSum(list,"extras")};
   });
 }
 function yearOptions(){
@@ -473,16 +488,17 @@ function yearView(){
   const years=yearOptions();
   if(!S.sheetYear||!years.includes(S.sheetYear))S.sheetYear=years[0];
   const rows=yearRows(S.sheetYear),s=S.settings,gl=+s.groceriesLimit||0,bl=+s.babyLimit||0,cur=curKey();
-  const tot=rows.reduce((a,r)=>({g:a.g+r.g,b:a.b+r.b,x:a.x+r.x}),{g:0,b:0,x:0});
+  const tot=rows.reduce((a,r)=>({g:a.g+r.g,b:a.b+r.b,h:a.h+r.h,x:a.x+r.x}),{g:0,b:0,h:0,x:0}),hl=+s.huisLimit||0;
   return `<div class="field"><label for="sheet-year">Year</label><select id="sheet-year">${years.map(y=>`<option value="${y}" ${y===S.sheetYear?"selected":""}>${y}</option>`).join("")}</select>
     <span class="hint">Each row shows the slips you put in that month. Red means over the limit.</span></div>
   <div class="card"><div class="row" style="font-size:14px"><span class="muted">Groceries this year</span><span>${money(tot.g)}</span></div>
     <div class="row" style="font-size:14px"><span class="muted">Baby Fund this year</span><span>${money(tot.b)}</span></div>
+    <div class="row" style="font-size:14px"><span class="muted">Huis Kaffee this year</span><span>${money(tot.h)}</span></div>
     <div class="row" style="font-size:14px"><span class="muted">Month-end extras this year</span><span>${money(tot.x)}</span></div>
-    <div class="row" style="font-size:14px"><strong>Total</strong><span><strong>${money(tot.g+tot.b+tot.x)}</strong></span></div></div>
-  <div class="tablewrap"><table><thead><tr><th>Month</th><th class="n">Groceries</th><th class="n">Baby</th><th class="n">Month-end</th></tr></thead><tbody>
-    ${rows.map(r=>`<tr class="${r.p.key===cur?"cur":""}"><td>${r.name.slice(0,3)}</td><td class="n ${gl&&r.g>gl?"over":""}">${r.g?money(r.g):"—"}</td><td class="n ${!fundMode()&&bl&&r.b>bl?"over":""}">${r.b?money(r.b):"—"}</td><td class="n">${r.x?money(r.x):"—"}</td></tr>`).join("")}
-  </tbody><tfoot><tr><td>Total</td><td class="n">${money(tot.g)}</td><td class="n">${money(tot.b)}</td><td class="n">${money(tot.x)}</td></tr></tfoot></table></div>
+    <div class="row" style="font-size:14px"><strong>Total</strong><span><strong>${money(tot.g+tot.b+tot.h+tot.x)}</strong></span></div></div>
+  <div class="tablewrap"><table><thead><tr><th>Month</th><th class="n">Groceries</th><th class="n">Baby</th><th class="n">Huis</th><th class="n">Month-end</th></tr></thead><tbody>
+    ${rows.map(r=>`<tr class="${r.p.key===cur?"cur":""}"><td>${r.name.slice(0,3)}</td><td class="n ${gl&&r.g>gl?"over":""}">${r.g?money(r.g):"—"}</td><td class="n ${!fundMode()&&bl&&r.b>bl?"over":""}">${r.b?money(r.b):"—"}</td><td class="n ${hl&&r.h>hl?"over":""}">${r.h?money(r.h):"—"}</td><td class="n">${r.x?money(r.x):"—"}</td></tr>`).join("")}
+  </tbody><tfoot><tr><td>Total</td><td class="n">${money(tot.g)}</td><td class="n">${money(tot.b)}</td><td class="n">${money(tot.h)}</td><td class="n">${money(tot.x)}</td></tr></tfoot></table></div>
   <button class="btn" id="export-year">Download ${S.sheetYear} sheet (CSV)</button>
   ${(()=>{const n=S.expenses.filter(e=>e.hasPhoto&&monthOf(e).startsWith(S.sheetYear+"-")).length;return n?`<button class="btn" id="photos-year">Save all ${n} photos from ${S.sheetYear} to phone</button><p class="hint" style="margin-top:-8px">One folder per month in Pictures › Slipwise.</p>`:""})()}`;
 }
@@ -514,6 +530,7 @@ function settingsView(){
       <div class="seg two" role="group" aria-label="Baby Fund works as"><button data-babymode="monthly" aria-pressed="${!fundMode()}">A monthly limit</button><button data-babymode="fund" aria-pressed="${fundMode()}">One running fund</button></div>
       <span class="hint" id="bm-hint">${fundMode()?"One total that baby slips come off until it runs out. It does not reset each month.":"Starts fresh every month, like Groceries."}</span></div>
     <div class="field"><label for="st-b" id="st-b-label">${fundMode()?"Baby Fund total":"Baby Fund limit per month"}</label><input id="st-b" class="amtin" inputmode="decimal" value="${amtVal(s.babyLimit)}" placeholder="1 500"></div>
+    <div class="field"><label for="st-h">Huis Kaffee limit per month</label><input id="st-h" class="amtin" inputmode="decimal" value="${amtVal(s.huisLimit)}" placeholder="2 000"><span class="hint">Starts fresh every month, like Groceries.</span></div>
     <div class="field" id="fund-start-field" ${fundMode()?"":"hidden"}><label for="st-bstart">Fund started in</label><select id="st-bstart">${monthChoices(fundStartKey()==="2000-01"?null:fundStartKey()).map(k=>`<option value="${k}" ${k===(s.babyFundStart?fundStartKey():curKey())?"selected":""}>${monthName(periodOfKey(k))}</option>`).join("")}</select><span class="hint">Baby slips from this month on come off the fund.</span></div>
     <div class="field"><label for="st-cur">Currency symbol</label><input id="st-cur" value="${esc(s.currency||"R")}" maxlength="4"></div>
     <p class="hint">End of month payments have no limit. They only add up, so you can see your total extras.</p>
@@ -537,9 +554,9 @@ function settingsView(){
 function bindView(){
   const on=(id,ev,fn)=>{const el=document.getElementById(id);if(el)el.addEventListener(ev,fn)};
   on("su-save","click",async()=>{
-    const g=num($("#su-g").value),b=num($("#su-b").value);
+    const g=num($("#su-g").value),b=num($("#su-b").value),hl=num($("#su-h").value);
     if(!(g>0)){toast("Enter a Groceries limit above zero");return}
-    await putSettings({groceriesLimit:g,babyLimit:b>0?b:0,apiKey:$("#su-key").value.trim()});toast("Budgets set");
+    await putSettings({groceriesLimit:g,babyLimit:b>0?b:0,huisLimit:hl>0?hl:0,apiKey:$("#su-key").value.trim()});toast("Budgets set");
   });
   on("hm-prev","click",()=>{S.homeKey=shiftKey(S.homeKey,-1);render()});
   on("hm-next","click",()=>{S.homeKey=shiftKey(S.homeKey,1);render()});
@@ -554,9 +571,9 @@ function bindView(){
     $("#fund-start-field").hidden=!f;
   }));
   on("st-save","click",async()=>{
-    const g=num($("#st-g").value),b=num($("#st-b").value);
+    const g=num($("#st-g").value),b=num($("#st-b").value),hl=num($("#st-h").value);
     if(!(g>0)){toast("Enter a Groceries limit above zero");return}
-    await putSettings({groceriesLimit:g,babyLimit:b>0?b:0,babyMode:pendingMode,babyFundStart:$("#st-bstart").value||curKey(),
+    await putSettings({groceriesLimit:g,babyLimit:b>0?b:0,huisLimit:hl>0?hl:0,babyMode:pendingMode,babyFundStart:$("#st-bstart").value||curKey(),
       currency:($("#st-cur").value.trim()||"R").slice(0,4),apiKey:$("#st-key").value.trim(),model:$("#st-model").value});
     toast("Settings saved");
   });
@@ -603,7 +620,7 @@ async function openEditor(exp,file){
     <div id="ed-photo"></div>
     <div id="ed-status" class="status" ${file?"":"hidden"}><span class="spin"></span><span>${file&&hasKey?"Reading the slip…":"Preparing photo…"}</span></div>
     <div class="field"><span class="flabel">Where does it belong?</span>
-      <div class="seg" role="group" aria-label="Pot">${POT_IDS.map(k=>`<button data-pot="${k}" aria-pressed="${k===pot}"><span class="dot ${k}"></span>${POTS[k].short}</button>`).join("")}</div>
+      <div class="seg pots" role="group" aria-label="Pot">${POT_IDS.map(k=>`<button data-pot="${k}" aria-pressed="${k===pot}"><span class="dot ${k}"></span>${POTS[k].short}</button>`).join("")}</div>
       <span class="hint" id="ed-pot-hint"></span></div>
     <div class="field"><label for="ed-month">Month it counts in</label><select id="ed-month">${monthChoices(slipMonth).map(k=>`<option value="${k}" ${k===slipMonth?"selected":""}>${monthName(periodOfKey(k))}${k===curKey()?" (this month)":""}</option>`).join("")}</select></div>
     <div class="field"><label for="ed-amount">Total paid</label><input id="ed-amount" class="amtin" inputmode="decimal" value="${d.amount!==""?esc((+d.amount).toFixed(2).replace(".",",")):""}" placeholder="0,00"></div>
@@ -618,7 +635,7 @@ async function openEditor(exp,file){
   const setPot=(k,byUser)=>{
     pot=k;if(byUser)potTouched=true;
     document.querySelectorAll("[data-pot]").forEach(b=>b.setAttribute("aria-pressed",String(b.dataset.pot===k)));
-    $("#ed-pot-hint").textContent=k==="extras"?"Adds to your month-end extras. Not deducted from Groceries or Baby Fund.":k==="baby"?(fundMode()?"Comes off the Baby Fund.":"Comes off the Baby Fund limit for the month you choose below."):"Comes off the Groceries limit for the month you choose below.";
+    $("#ed-pot-hint").textContent=k==="extras"?"Adds to your month-end extras. Not deducted from any pot.":k==="huis"?"Comes off the Huis Kaffee limit for the month you choose below.":k==="baby"?(fundMode()?"Comes off the Baby Fund.":"Comes off the Baby Fund limit for the month you choose below."):"Comes off the Groceries limit for the month you choose below.";
     if(isNew)$("#ed-save").textContent=k==="extras"?"Add to month-end":"Deduct from "+POTS[k].name;
   };
   document.querySelectorAll("[data-pot]").forEach(b=>b.addEventListener("click",()=>setPot(b.dataset.pot,true)));
@@ -733,21 +750,22 @@ const csvq=v=>'"'+String(v??"").replace(/"/g,'""')+'"';
 const csvBlob=rows=>new Blob(["﻿"+rows.map(r=>r.map(csvq).join(",")).join("\r\n")],{type:"text/csv"});
 async function exportMonthCsv(){
   const p=periodOfKey(S.sheetKey),list=inPeriod(p).sort((a,b)=>a.date.localeCompare(b.date)),s=S.settings;
-  const gl=+s.groceriesLimit||0,bl=+s.babyLimit||0,gs=potSum(list,"groceries"),bs=potSum(list,"baby"),xs=potSum(list,"extras");
+  const gl=+s.groceriesLimit||0,bl=+s.babyLimit||0,gs=potSum(list,"groceries"),bs=potSum(list,"baby"),xs=potSum(list,"extras"),hl=+s.huisLimit||0,hs=potSum(list,"huis");
   const rows=[["Month",monthName(p)],[],["Date on slip","Shop / payment","Pot","Amount"]];
   list.forEach(e=>rows.push([e.date,e.merchant,POTS[potOf(e)].name,(+e.amount).toFixed(2)]));
   rows.push([],["Pot","Spent","Limit","Left"],
     ["Groceries",gs.toFixed(2),gl.toFixed(2),(gl-gs).toFixed(2)],
     fundMode()?["Baby Fund (running fund)",bs.toFixed(2),bl.toFixed(2),(bl-babyFundSpent()).toFixed(2)]:["Baby Fund",bs.toFixed(2),bl?bl.toFixed(2):"",bl?(bl-bs).toFixed(2):""],
+    ["Huis Kaffee",hs.toFixed(2),hl?hl.toFixed(2):"",hl?(hl-hs).toFixed(2):""],
     ["End of month payments (extras)",xs.toFixed(2),"",""],
-    ["Total",(gs+bs+xs).toFixed(2),"",""]);
+    ["Total",(gs+bs+hs+xs).toFixed(2),"",""]);
   if(!await saveFile(`slipwise-${p.key}-${MONTHS[p.start.getMonth()]}.csv`,csvBlob(rows)))toast("Sheet saved to Downloads");
 }
 async function exportYearCsv(){
-  const y=S.sheetYear,rows=[["Year",String(y)],[],["Month","Groceries","Baby Fund","End of month payments","Total"]];
+  const y=S.sheetYear,rows=[["Year",String(y)],[],["Month","Groceries","Baby Fund","Huis Kaffee","End of month payments","Total"]];
   const yr=yearRows(y);let g=0,b=0,x=0;
-  yr.forEach(r=>{g+=r.g;b+=r.b;x+=r.x;rows.push([r.name,r.g.toFixed(2),r.b.toFixed(2),r.x.toFixed(2),(r.g+r.b+r.x).toFixed(2)])});
-  rows.push(["Total",g.toFixed(2),b.toFixed(2),x.toFixed(2),(g+b+x).toFixed(2)]);
+  let hh=0;yr.forEach(r=>{g+=r.g;b+=r.b;hh+=r.h;x+=r.x;rows.push([r.name,r.g.toFixed(2),r.b.toFixed(2),r.h.toFixed(2),r.x.toFixed(2),(r.g+r.b+r.h+r.x).toFixed(2)])});
+  rows.push(["Total",g.toFixed(2),b.toFixed(2),hh.toFixed(2),x.toFixed(2),(g+b+hh+x).toFixed(2)]);
   if(!await saveFile(`slipwise-${y}.csv`,csvBlob(rows)))toast("Year sheet saved to Downloads");
 }
 // Save every photo in the list to the phone's Pictures/Slipwise/<Month Year> folder in one go
