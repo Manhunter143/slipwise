@@ -177,26 +177,48 @@ public class MainActivity extends Activity {
         /**
          * Saves one photo quietly into Pictures/Slipwise/&lt;folder&gt; and reports success,
          * so the page can save many photos in a row and show one message at the end.
+         * The folder may have levels, e.g. "November 2026/Groceries".
          */
         @JavascriptInterface
         public boolean savePhoto(String name, String b64, String folder) {
-            return writePhotoQuietly(name, b64, folder);
+            return writeQuietly(name, b64, "image/jpeg", folder, true);
+        }
+
+        /** Saves one document (e.g. a CSV sheet) quietly into Download/Slipwise/&lt;folder&gt;. */
+        @JavascriptInterface
+        public boolean saveDoc(String name, String b64, String mime, String folder) {
+            return writeQuietly(name, b64, mime == null ? "text/csv" : mime, folder, false);
         }
     }
 
-    private boolean writePhotoQuietly(String name, String b64, String folder) {
-        String sub = folder == null ? "" : folder.replaceAll("[^A-Za-z0-9 _-]", "").trim();
+    /** Cleans each level of a folder path so only letters, digits, spaces, "_", "-", "&" and "'" remain. */
+    private static String cleanFolder(String folder) {
+        if (folder == null) return "";
+        StringBuilder out = new StringBuilder();
+        for (String part : folder.split("/")) {
+            String p = part.replaceAll("[^A-Za-z0-9 _&'-]", "").trim();
+            if (p.isEmpty()) continue;
+            if (out.length() > 0) out.append('/');
+            out.append(p);
+        }
+        return out.toString();
+    }
+
+    private boolean writeQuietly(String name, String b64, String mime, String folder, boolean isImage) {
+        String sub = cleanFolder(folder);
         String safeName = name.replaceAll("[\\\\/:*?\"<>|]", "-");
+        String base = isImage ? Environment.DIRECTORY_PICTURES : Environment.DIRECTORY_DOWNLOADS;
         try {
             byte[] bytes = Base64.decode(b64, Base64.DEFAULT);
             if (Build.VERSION.SDK_INT >= 29) {
                 ContentValues cv = new ContentValues();
                 cv.put(MediaStore.MediaColumns.DISPLAY_NAME, safeName);
-                cv.put(MediaStore.MediaColumns.MIME_TYPE, "image/jpeg");
-                cv.put(MediaStore.MediaColumns.RELATIVE_PATH,
-                        Environment.DIRECTORY_PICTURES + "/Slipwise" + (sub.isEmpty() ? "" : "/" + sub));
-                Uri uri = getContentResolver().insert(
-                        MediaStore.Images.Media.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY), cv);
+                cv.put(MediaStore.MediaColumns.MIME_TYPE, mime);
+                cv.put(MediaStore.MediaColumns.RELATIVE_PATH, base + "/Slipwise" + (sub.isEmpty() ? "" : "/" + sub));
+                Uri collection = isImage
+                        ? MediaStore.Images.Media.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY)
+                        : MediaStore.Downloads.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY);
+                Uri uri = getContentResolver().insert(collection, cv);
                 if (uri == null) return false;
                 try (OutputStream os = getContentResolver().openOutputStream(uri)) {
                     if (os == null) return false;
@@ -209,7 +231,7 @@ public class MainActivity extends Activity {
                             new String[]{Manifest.permission.WRITE_EXTERNAL_STORAGE}, REQ_STORAGE));
                     return false;
                 }
-                File dir = new File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES),
+                File dir = new File(Environment.getExternalStoragePublicDirectory(base),
                         "Slipwise" + (sub.isEmpty() ? "" : "/" + sub));
                 //noinspection ResultOfMethodCallIgnored
                 dir.mkdirs();

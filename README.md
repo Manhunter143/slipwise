@@ -1,6 +1,6 @@
 # Slipwise
 
-A monthly budget app for Android. Four pots: Groceries, Baby Fund and Huis Kaffee each have a limit, End of month payments just add up. Snap a till slip, Claude reads the total and suggests the pot, and the photo is kept with the slip. Everything is stored on the phone.
+A monthly budget app for Android. Pots: Groceries, Baby Fund, Huis Kaffee, E-Bucks, Fuel and Medical each have their own monthly limit (0 = no limit, just tracked); End of month payments just add up. Snap a till slip, Claude reads the total, and the photo is kept with the slip. Slips go into the month you choose; the app stays in that month until you move on. Sheets and photos download sorted by pot. Everything is stored on the phone.
 
 ## Get the APK
 
