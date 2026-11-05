@@ -289,9 +289,10 @@ const plural=(n,w)=>`${n} ${w}${n===1?"":"s"}`;
 /* The month you are working in. It only changes when you change it, never by itself. */
 const curKey=()=>ym(today());
 const homeKey=()=>isKey(S.settings.homeKey)?S.settings.homeKey:curKey();
-// New slips can only go into the newest month you have moved to, or later
+// New slips can go into the newest month you have moved to, one month before it, or later
 const openFrom=()=>maxKey(isKey(S.settings.openFrom)?S.settings.openFrom:homeKey(),"0000-00");
-const isClosed=k=>k<openFrom();
+const earliestOpen=()=>shiftKey(openFrom(),-1);
+const isClosed=k=>k<earliestOpen();
 
 // Returns true when the Android app saved it (it shows its own "Saved" message)
 async function saveFile(name,blob){
@@ -415,7 +416,7 @@ function render(){
 const amtVal=v=>v?esc((+v).toFixed(2).replace(".",",")):"";
 // Months a slip can go into: from the open month to three months past the later of it and today
 function slipMonthChoices(own){
-  const from=openFrom(),to=shiftKey(maxKey(from,curKey()),3),keys=[];
+  const from=earliestOpen(),to=shiftKey(maxKey(openFrom(),curKey()),3),keys=[];
   for(let k=from;k<=to;k=shiftKey(k,1))keys.push(k);
   if(own&&!keys.includes(own))keys.unshift(own);
   return keys;
@@ -448,7 +449,8 @@ function homeView(){
     <p class="hint">End of month payments have no limit. They add up separately and never come off another pot.</p>
     <button class="btn primary" id="su-save">Start budgeting</button></div>`;
   }
-  if(closed) h+=`<div class="banner">${MONTHS[p.start.getMonth()]} is closed for new slips. You can still look at it and fix or delete slips. <button class="btn small" id="hm-open" style="margin-top:8px">Go to ${keyName(openFrom())}</button></div>`;
+  if(closed) h+=`<div class="banner">${MONTHS[p.start.getMonth()]} is closed for new slips: you can add slips up to one month back from ${MONTHS[periodOfKey(openFrom()).start.getMonth()]}. You can still look at ${MONTHS[p.start.getMonth()]} and fix or delete its slips. <button class="btn small" id="hm-open" style="margin-top:8px">Go to ${keyName(openFrom())}</button></div>`;
+  else if(hk<openFrom()) h+=`<div class="banner">You're one month back, in ${MONTHS[p.start.getMonth()]}. Slips you add here count in ${MONTHS[p.start.getMonth()]}. <button class="btn small" id="hm-open" style="margin-top:8px">Back to ${keyName(openFrom())}</button></div>`;
   else if(hk<curKey()) h+=`<div class="banner">It's ${MONTHS[today().getMonth()]} now. Slipwise stays on ${MONTHS[p.start.getMonth()]} until you move on with ›.</div>`;
 
   const list=inPeriod(p),t=today();
@@ -698,7 +700,7 @@ async function openEditor(exp,file){
   // New slips start in the pot you used last and the month you are working in
   const startPot=POTS[S.settings.lastPot]?S.settings.lastPot:"groceries";
   const d=exp||{merchant:"",amount:"",date:ymd(today()),pot:startPot,items:[]};
-  const slipMonth=exp?monthOf(exp):maxKey(homeKey(),openFrom());
+  const slipMonth=exp?monthOf(exp):(isClosed(homeKey())?openFrom():homeKey());
   let pot=potOf(d);
   $("#modal").innerHTML=`<div class="overlay" id="ov"><div class="sheet" role="dialog" aria-modal="true" aria-label="${isNew?"Add slip":"Edit slip"}">
     <div class="grab"></div>
