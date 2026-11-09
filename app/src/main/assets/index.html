@@ -232,7 +232,7 @@ const MONTHS=["January","February","March","April","May","June","July","August",
 const MODELS={"claude-sonnet-5-5":"Claude Sonnet 5.5 (recommended, most accurate, about R0.15–0.25 a slip)","claude-haiku-4-5-20251001":"Claude Haiku 4.5 (cheaper, less accurate, about R0.07 a slip)"};
 const DEFAULTS={groceriesLimit:0,babyLimit:0,huisLimit:0,ebucksLimit:0,fuelLimit:0,medicalLimit:0,babyMode:"monthly",babyFundStart:"",
   currency:"R",apiKey:"",model:"claude-sonnet-5-5",readerV2:true,setupDone:false,
-  homeKey:"",openFrom:"",lastPot:"groceries",filter:"all"};
+  homeKey:"",openFrom:"",lastPot:"groceries",filter:"all",dataVersion:0,backedUpVersion:-1,lastAutoBackup:""};
 const S={settings:Object.assign({},DEFAULTS),expenses:[],tab:"home",sheetView:"month",sheetKey:null,sheetYear:null,ready:false,storageNote:""};
 
 /* ---------- helpers ---------- */
@@ -285,6 +285,7 @@ function potState(list,pot){
 }
 const potDot=id=>`<span class="dot ${id}"></span>`;
 const plural=(n,w)=>`${n} ${w}${n===1?"":"s"}`;
+const appVersion=()=>{try{const v=window.AndroidBridge&&window.AndroidBridge.appVersion&&window.AndroidBridge.appVersion();return v?"version "+v:"web version"}catch(e){return ""}};
 
 /* The month you are working in. It only changes when you change it, never by itself. */
 const curKey=()=>ym(today());
@@ -358,9 +359,10 @@ async function putExpense(row,photoBlob){
   if(photoBlob){await dbPut("photos",photoBlob,row.id);row.hasPhoto=true}
   await dbPut("expenses",row);
   const i=S.expenses.findIndex(e=>e.id===row.id);if(i>=0)S.expenses[i]=row;else S.expenses.push(row);
+  await putSettings({dataVersion:(S.settings.dataVersion||0)+1},true);
   askPersist();render();
 }
-async function removeExpense(id){await dbDel("expenses",id);await dbDel("photos",id);S.expenses=S.expenses.filter(e=>e.id!==id);render()}
+async function removeExpense(id){await dbDel("expenses",id);await dbDel("photos",id);S.expenses=S.expenses.filter(e=>e.id!==id);await putSettings({dataVersion:(S.settings.dataVersion||0)+1},true);render()}
 let persistAsked=false;
 function askPersist(){if(persistAsked||!navigator.storage||!navigator.storage.persist)return;persistAsked=true;navigator.storage.persist().catch(()=>{})}
 
@@ -447,7 +449,10 @@ function homeView(){
     ${limitFields("su")}
     <div class="field"><label for="su-key">Claude key for reading slips</label><input id="su-key" type="password" autocomplete="off" placeholder="sk-ant-…" value="${esc(s.apiKey)}"><span class="hint">Leave it empty to type amounts by hand.</span></div>
     <p class="hint">End of month payments have no limit. They add up separately and never come off another pot.</p>
-    <button class="btn primary" id="su-save">Start budgeting</button></div>`;
+    <button class="btn primary" id="su-save">Start budgeting</button>
+    <div class="rule"></div>
+    <p class="hint">Had Slipwise before? Bring your slips and photos back from a backup file (Download › Slipwise › Backups).</p>
+    <button class="btn" id="su-restore">Restore from a backup</button><div id="bk-confirm"></div></div>`;
   }
   if(closed) h+=`<div class="banner">${MONTHS[p.start.getMonth()]} is closed for new slips: you can add slips up to one month back from ${MONTHS[periodOfKey(openFrom()).start.getMonth()]}. You can still look at ${MONTHS[p.start.getMonth()]} and fix or delete its slips. <button class="btn small" id="hm-open" style="margin-top:8px">Go to ${keyName(openFrom())}</button></div>`;
   else if(hk<openFrom()) h+=`<div class="banner">You're one month back, in ${MONTHS[p.start.getMonth()]}. Slips you add here count in ${MONTHS[p.start.getMonth()]}. <button class="btn small" id="hm-open" style="margin-top:8px">Back to ${keyName(openFrom())}</button></div>`;
@@ -621,11 +626,14 @@ function settingsView(){
   </div>
   <button class="btn primary" id="st-save">Save settings</button>
   <div class="card"><h2>Backup</h2>
-    <p class="hint">Slips and photos are kept only on this phone. Make a backup now and then, and keep the file somewhere safe (Google Drive, WhatsApp to yourself). The Claude key is not included.</p>
+    <p class="hint">Slipwise backs up automatically once a day, and again whenever you leave the app after adding or changing slips. The backups go to Download › Slipwise › Backups, one file per weekday, so the last 7 days are always there, photos included. They stay on the phone even if the app is removed. The Claude key is not included.</p>
+    <p class="hint" id="auto-note">${esc(autoNote())}</p>
+    <p class="hint">For an extra copy, tap Back up and keep that file somewhere safe (Google Drive, WhatsApp to yourself). To bring slips back, tap Restore and pick a backup file.</p>
     <div class="actions"><button class="btn" id="bk-save">Back up</button><button class="btn" id="bk-restore">Restore</button></div>
     <div id="bk-confirm"></div>
     <p class="hint" id="storage-note">${esc(S.storageNote)}</p>
-  </div>`;
+  </div>
+  <p class="hint" style="text-align:center">Slipwise ${esc(appVersion())}</p>`;
 }
 
 /* ---------- events ---------- */
@@ -634,6 +642,7 @@ function bindView(){
   on("su-save","click",async()=>{
     await putSettings(Object.assign(readLimits("su"),{apiKey:$("#su-key").value.trim(),setupDone:true,homeKey:homeKey(),openFrom:openFrom()}));toast("Budgets set");
   });
+  on("su-restore","click",()=>$("#restore-file").click());
   on("hm-prev","click",()=>goMonth(shiftKey(homeKey(),-1)));
   on("hm-next","click",()=>goMonth(shiftKey(homeKey(),1)));
   on("hm-open","click",()=>goMonth(openFrom()));
@@ -923,14 +932,40 @@ async function exportByPot(list,label,btn){
   const ph=await savePhotos(list,btn,true);
   toast(`Saved ${plural(sheets,"pot sheet")} to Download › Slipwise › ${label}`+(ph.total?` and ${ph.ok} of ${plural(ph.total,"photo")} to Pictures › Slipwise`:""));
 }
+// Everything needed to rebuild the app: slips, photos and settings (never the Claude key)
+async function backupBlob(){
+  const photos={};
+  for(const e of S.expenses){if(e.hasPhoto){const b=await dbGet("photos",e.id);if(b)photos[e.id]=await blobToDataURL(b)}}
+  const s=Object.assign({},S.settings);delete s.apiKey;
+  return new Blob([JSON.stringify({app:"slipwise",version:3,made:new Date().toISOString(),settings:s,expenses:S.expenses,photos})],{type:"application/json"});
+}
+/* Automatic backup: once a day, and whenever you leave the app after a change.
+   One file per weekday in Download/Slipwise/Backups, so the last 7 days are always there.
+   An empty app never writes a backup, so a fresh start can't overwrite a good one. */
+const WEEKDAYS=["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+let autoBusy=false;
+async function autoBackup(){
+  const B=window.AndroidBridge;
+  if(autoBusy||!idb||!B||!B.saveBackup||!S.expenses.length)return;
+  const s=S.settings,doneToday=(s.lastAutoBackup||"").slice(0,10)===ymd(today());
+  if(doneToday&&s.backedUpVersion===s.dataVersion)return;
+  autoBusy=true;
+  try{
+    const ver=s.dataVersion,ok=B.saveBackup(`Slipwise backup - ${WEEKDAYS[new Date().getDay()]}.json`,await blobToB64(await backupBlob()));
+    if(ok)await putSettings({lastAutoBackup:new Date().toISOString(),backedUpVersion:ver},true);
+    const el=$("#auto-note");if(el)el.textContent=autoNote();
+  }catch(e){}finally{autoBusy=false}
+}
+function autoNote(){
+  if(!window.AndroidBridge||!window.AndroidBridge.saveBackup)return "Automatic backups work in the Android app.";
+  const t=S.settings.lastAutoBackup?new Date(S.settings.lastAutoBackup):null;
+  return t?`Last automatic backup: ${t.toLocaleDateString("en-ZA",{weekday:"short",day:"numeric",month:"short"})}, ${t.toLocaleTimeString("en-ZA",{hour:"2-digit",minute:"2-digit"})}.`:"No automatic backup yet. The first one is made once you have slips.";
+}
+document.addEventListener("visibilitychange",()=>{if(document.visibilityState==="hidden")autoBackup()});
 async function backup(){
   const btn=$("#bk-save");btn.disabled=true;btn.textContent="Packing…";
   try{
-    const photos={};
-    for(const e of S.expenses){if(e.hasPhoto){const b=await dbGet("photos",e.id);if(b)photos[e.id]=await blobToDataURL(b)}}
-    const s=Object.assign({},S.settings);delete s.apiKey;
-    const data={app:"slipwise",version:3,made:new Date().toISOString(),settings:s,expenses:S.expenses,photos};
-    if(!await saveFile(`slipwise-backup-${ymd(today())}.json`,new Blob([JSON.stringify(data)],{type:"application/json"})))toast("Backup saved to Downloads");
+    if(!await saveFile(`slipwise-backup-${ymd(today())}.json`,await backupBlob()))toast("Backup saved to Downloads");
   }catch(e){toast("Couldn't make the backup. Try again.")}
   finally{btn.disabled=false;btn.textContent="Back up"}
 }
@@ -951,7 +986,7 @@ async function confirmRestore(file){
         await dbPut("expenses",e);
       }
       if(data.settings){const keep=S.settings.apiKey;S.settings=Object.assign(migrateSettings(data.settings),{apiKey:keep});await dbPut("kv",S.settings,"settings")}
-      S.expenses=await dbAll("expenses");render();toast("Backup restored");
+      S.expenses=await dbAll("expenses");S.settings.setupDone=true;await putSettings({dataVersion:(S.settings.dataVersion||0)+1},true);S.tab="home";render();toast(`Backup restored: ${plural(S.expenses.length,"slip")}`);
     }catch(e){toast("Restore stopped part-way. Try again.")}
   };
 }
@@ -975,6 +1010,7 @@ render();
     }
   }catch(e){toast("This phone can't store data in the app. Try reinstalling it.")}
   S.ready=true;render();
+  setTimeout(autoBackup,4000);
 })();
 if(!window.AndroidBridge&&"serviceWorker" in navigator&&location.protocol==="https:")navigator.serviceWorker.register("sw.js").catch(()=>{});
 })();

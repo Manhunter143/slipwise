@@ -3,9 +3,11 @@ package za.slipwise.app;
 import android.Manifest;
 import android.app.Activity;
 import android.content.ActivityNotFoundException;
+import android.content.ContentUris;
 import android.content.ContentValues;
 import android.content.Intent;
 import android.content.pm.PackageManager;
+import android.database.Cursor;
 import android.media.MediaScannerConnection;
 import android.net.Uri;
 import android.os.Build;
@@ -188,6 +190,80 @@ public class MainActivity extends Activity {
         @JavascriptInterface
         public boolean saveDoc(String name, String b64, String mime, String folder) {
             return writeQuietly(name, b64, mime == null ? "text/csv" : mime, folder, false);
+        }
+        /**
+         * Writes the automatic backup to Download/Slipwise/Backups/&lt;name&gt;, replacing the file
+         * with the same name if this app made it, so the folder keeps one file per weekday.
+         */
+        @JavascriptInterface
+        public boolean saveBackup(String name, String b64) {
+            return writeBackup(name, b64);
+        }
+
+        /** The installed version, e.g. "1.0.11", shown in Settings. */
+        @JavascriptInterface
+        public String appVersion() {
+            try {
+                return getPackageManager().getPackageInfo(getPackageName(), 0).versionName;
+            } catch (Exception e) {
+                return "";
+            }
+        }
+    }
+
+
+    private boolean writeBackup(String name, String b64) {
+        String safeName = name.replaceAll("[^A-Za-z0-9 ._-]", "");
+        try {
+            byte[] bytes = Base64.decode(b64, Base64.DEFAULT);
+            if (Build.VERSION.SDK_INT >= 29) {
+                String rel = Environment.DIRECTORY_DOWNLOADS + "/Slipwise/Backups/";
+                Uri collection = MediaStore.Downloads.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY);
+                Uri target = null;
+                try (Cursor c = getContentResolver().query(collection,
+                        new String[]{MediaStore.MediaColumns._ID},
+                        MediaStore.MediaColumns.DISPLAY_NAME + "=? AND " + MediaStore.MediaColumns.RELATIVE_PATH + "=?",
+                        new String[]{safeName, rel}, null)) {
+                    if (c != null && c.moveToFirst()) target = ContentUris.withAppendedId(collection, c.getLong(0));
+                } catch (Exception ignored) {
+                }
+                if (target != null) {
+                    try (OutputStream os = getContentResolver().openOutputStream(target, "wt")) {
+                        if (os != null) {
+                            os.write(bytes);
+                            return true;
+                        }
+                    } catch (Exception ignored) {
+                        // Not ours any more (e.g. after a reinstall): write a new file below
+                    }
+                }
+                ContentValues cv = new ContentValues();
+                cv.put(MediaStore.MediaColumns.DISPLAY_NAME, safeName);
+                cv.put(MediaStore.MediaColumns.MIME_TYPE, "application/json");
+                cv.put(MediaStore.MediaColumns.RELATIVE_PATH, rel);
+                Uri uri = getContentResolver().insert(collection, cv);
+                if (uri == null) return false;
+                try (OutputStream os = getContentResolver().openOutputStream(uri)) {
+                    if (os == null) return false;
+                    os.write(bytes);
+                }
+                return true;
+            } else {
+                if (checkSelfPermission(Manifest.permission.WRITE_EXTERNAL_STORAGE) != PackageManager.PERMISSION_GRANTED) {
+                    runOnUiThread(() -> requestPermissions(
+                            new String[]{Manifest.permission.WRITE_EXTERNAL_STORAGE}, REQ_STORAGE));
+                    return false;
+                }
+                File dir = new File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS), "Slipwise/Backups");
+                //noinspection ResultOfMethodCallIgnored
+                dir.mkdirs();
+                try (FileOutputStream fo = new FileOutputStream(new File(dir, safeName), false)) {
+                    fo.write(bytes);
+                }
+                return true;
+            }
+        } catch (Exception e) {
+            return false;
         }
     }
 
