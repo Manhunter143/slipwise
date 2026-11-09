@@ -86,6 +86,10 @@ p{margin:0}
 .mini.medical{border-top:3px solid var(--pot-m)}
 .meter.medical i{background:var(--pot-m)}
 .potbtns{display:flex;gap:8px;flex-wrap:wrap;margin-top:4px}
+.checkrow{display:flex;gap:12px;align-items:flex-start;cursor:pointer}
+.checkrow input{width:22px;height:22px;flex:none;margin:2px 0 0;accent-color:var(--accent)}
+.checkrow span{display:flex;flex-direction:column;gap:2px}
+.checkrow strong{font-weight:600}
 .suggest{margin-top:8px;font-size:13px;display:flex;align-items:center;gap:6px;flex-wrap:wrap;padding:8px 10px;border-radius:8px;background:var(--bg)}
 table.year{min-width:640px}
 table.year td,table.year th{padding-inline:6px}
@@ -232,7 +236,7 @@ const MONTHS=["January","February","March","April","May","June","July","August",
 const MODELS={"claude-sonnet-5-5":"Claude Sonnet 5.5 (recommended, most accurate, about R0.15–0.25 a slip)","claude-haiku-4-5-20251001":"Claude Haiku 4.5 (cheaper, less accurate, about R0.07 a slip)"};
 const DEFAULTS={groceriesLimit:0,babyLimit:0,huisLimit:0,ebucksLimit:0,fuelLimit:0,medicalLimit:0,babyMode:"monthly",babyFundStart:"",
   currency:"R",apiKey:"",model:"claude-sonnet-5-5",readerV2:true,setupDone:false,
-  homeKey:"",openFrom:"",lastPot:"groceries",filter:"all",dataVersion:0,backedUpVersion:-1,lastAutoBackup:""};
+  homeKey:"",openFrom:"",lastPot:"groceries",filter:"all",dataVersion:0,backedUpVersion:-1,lastAutoBackup:"",galleryCopy:true,openOlder:false};
 const S={settings:Object.assign({},DEFAULTS),expenses:[],tab:"home",sheetView:"month",sheetKey:null,sheetYear:null,ready:false,storageNote:""};
 
 /* ---------- helpers ---------- */
@@ -292,7 +296,8 @@ const curKey=()=>ym(today());
 const homeKey=()=>isKey(S.settings.homeKey)?S.settings.homeKey:curKey();
 // New slips can go into the newest month you have moved to, one month before it, or later
 const openFrom=()=>maxKey(isKey(S.settings.openFrom)?S.settings.openFrom:homeKey(),"0000-00");
-const earliestOpen=()=>shiftKey(openFrom(),-1);
+// The recovery switch opens the 12 months before that, for re-entering lost slips
+const earliestOpen=()=>shiftKey(openFrom(),S.settings.openOlder?-12:-1);
 const isClosed=k=>k<earliestOpen();
 
 // Returns true when the Android app saved it (it shows its own "Saved" message)
@@ -454,6 +459,7 @@ function homeView(){
     <p class="hint">Had Slipwise before? Bring your slips and photos back from a backup file (Download › Slipwise › Backups).</p>
     <button class="btn" id="su-restore">Restore from a backup</button><div id="bk-confirm"></div></div>`;
   }
+  if(s.openOlder) h+=`<div class="banner warn">Older months are open so you can re-enter slips. Turn this off in Settings when you are done.</div>`;
   if(closed) h+=`<div class="banner">${MONTHS[p.start.getMonth()]} is closed for new slips: you can add slips up to one month back from ${MONTHS[periodOfKey(openFrom()).start.getMonth()]}. You can still look at ${MONTHS[p.start.getMonth()]} and fix or delete its slips. <button class="btn small" id="hm-open" style="margin-top:8px">Go to ${keyName(openFrom())}</button></div>`;
   else if(hk<openFrom()) h+=`<div class="banner">You're one month back, in ${MONTHS[p.start.getMonth()]}. Slips you add here count in ${MONTHS[p.start.getMonth()]}. <button class="btn small" id="hm-open" style="margin-top:8px">Back to ${keyName(openFrom())}</button></div>`;
   else if(hk<curKey()) h+=`<div class="banner">It's ${MONTHS[today().getMonth()]} now. Slipwise stays on ${MONTHS[p.start.getMonth()]} until you move on with ›.</div>`;
@@ -618,6 +624,12 @@ function settingsView(){
     <div class="field"><label for="st-cur">Currency symbol</label><input id="st-cur" value="${esc(s.currency||"R")}" maxlength="4"></div>
     <p class="hint">End of month payments have no limit. They only add up, so you can see your total extras.</p>
   </div>
+  <div class="card"><h2>Slip photos</h2>
+    <label class="checkrow" for="st-gallery"><input type="checkbox" id="st-gallery" ${s.galleryCopy!==false?"checked":""}><span><strong>Copy each slip photo to my Gallery</strong><span class="hint">When you save a slip, its photo also goes to Pictures › Slipwise › month › pot, so you always have a copy outside the app.</span></span></label>
+  </div>
+  <div class="card"><h2>Re-entering old slips</h2>
+    <label class="checkrow" for="st-older"><input type="checkbox" id="st-older" ${s.openOlder?"checked":""}><span><strong>Let me add slips to older months</strong><span class="hint">Normally you can only add slips up to one month back. Switch this on to add slips to the past 12 months, for example to re-enter lost slips. Switch it off again when you're done.</span></span></label>
+  </div>
   <div class="card"><h2>Slip reading</h2>
     <div class="field"><label for="st-key">Claude key</label><input id="st-key" type="password" autocomplete="off" placeholder="sk-ant-…" value="${esc(s.apiKey)}"><span class="hint">Made at <a href="https://console.anthropic.com/settings/keys" target="_blank" rel="noopener">console.anthropic.com</a>. It is stored only on this phone.</span></div>
     <div class="field"><label for="st-model">Reader</label><select id="st-model">${Object.entries(MODELS).map(([k,v])=>`<option value="${k}" ${k===s.model?"selected":""}>${esc(v)}</option>`).join("")}</select></div>
@@ -657,7 +669,7 @@ function bindView(){
   }));
   on("st-save","click",async()=>{
     await putSettings(Object.assign(readLimits("st"),{babyMode:pendingMode,babyFundStart:$("#st-bstart").value||curKey(),
-      currency:($("#st-cur").value.trim()||"R").slice(0,4),apiKey:$("#st-key").value.trim(),model:$("#st-model").value}));
+      currency:($("#st-cur").value.trim()||"R").slice(0,4),apiKey:$("#st-key").value.trim(),model:$("#st-model").value,galleryCopy:$("#st-gallery").checked,openOlder:$("#st-older").checked}));
     toast("Settings saved");
   });
   on("st-test","click",async()=>{
@@ -768,6 +780,9 @@ async function openEditor(exp,file){
     try{
       if(isNew)await putSettings({lastPot:pot},true);
       await putExpense(row,photo);close();
+      // Gallery copy: the new photo also goes to Pictures/Slipwise/<Month>/<Pot>
+      if(photo&&S.settings.galleryCopy!==false&&window.AndroidBridge&&window.AndroidBridge.savePhoto)
+        saveQuiet("photo",`${date} ${cleanName(row.merchant)||"Slip"} R${amount.toFixed(2)}.jpg`,photo,keyName(month)+"/"+POTS[pot].name).catch(()=>{});
       const what=pot==="extras"?"added to month-end":limitOf(pot)>0||(pot==="baby"&&fundMode())?"off "+POTS[pot].name:"added to "+POTS[pot].name;
       toast((!isNew?"Slip updated":money(amount)+" "+what)+" · "+keyName(month));
     }catch(e){btn.disabled=false;toast(e&&e.name==="QuotaExceededError"?"Phone storage is full. Free up space, then try again.":"Couldn't save. Try again.")}
@@ -991,7 +1006,7 @@ async function confirmRestore(file){
   };
 }
 async function storageNote(){
-  const n=S.expenses.filter(e=>e.hasPhoto).length;let t=`${S.expenses.length} slips, ${n} photos saved on this phone.`;
+  const n=S.expenses.filter(e=>e.hasPhoto).length;let t=`${plural(S.expenses.length,"slip")}, ${plural(n,"photo")} saved on this phone.`;
   try{const est=await navigator.storage.estimate();if(est&&est.usage)t+=` Using about ${(est.usage/1048576).toFixed(1)} MB.`}catch(e){}
   S.storageNote=t;const el=$("#storage-note");if(el)el.textContent=t;
 }
